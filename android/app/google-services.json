@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "856355013052",
+    "project_id": "sales-field-app-f31a2",
+    "storage_bucket": "sales-field-app-f31a2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:856355013052:android:88f351c4f41d3b6136abb9",
+        "android_client_info": {
+          "package_name": "com.marc.new_test_store"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZ5DOZTWUB1-ziRoJhfGVSvqniQRiujXs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
