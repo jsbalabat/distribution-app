@@ -683,7 +683,6 @@ class _FormScreenState extends State<FormScreen> {
 
   void _handleStepContinue() async {
     final isGoingToFinalStep = _currentStep + 1 == _buildSteps().length - 1;
-    print(isGoingToFinalStep);
     if (isGoingToFinalStep) {
       final total = _calculateTotal();
       await _checkRemarks(total);
