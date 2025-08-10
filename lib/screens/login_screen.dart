@@ -87,9 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
             // You might want to display this in a more prominent way
             // like the original _error Text widget you had.
             _emailError = 'Login failed. Check your credentials.';
-            print(
-              'Firebase Auth Error: ${e.message}',
-            ); // Log the detailed error
+            // Log the detailed error
           }
         });
       }
@@ -98,7 +96,6 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() {
           _emailError = 'An unexpected error occurred. Please try again.';
-          print('Unexpected Error: ${e.toString()}');
         });
       }
     } finally {
