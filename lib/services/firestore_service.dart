@@ -11,9 +11,7 @@ class FirestoreService {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
-    await _firestore.collection('salesRequisitions').add({
-      ...formData,
-    });
+    await _firestore.collection('salesRequisitions').add({...formData});
   }
 
   Future<Map<String, dynamic>?> fetchItemPrice(String itemCode) async {
@@ -26,15 +24,13 @@ class FirestoreService {
 
       if (snapshot.docs.isNotEmpty) {
         return snapshot.docs.first.data(); // ✅ item data found
-      } else {
-        print('No item found for code: $itemCode');
-      }
+      } else {}
       return null;
     } catch (e) {
-      print('Error fetching itemMaster: $e');
       return null;
     }
   }
+
   Future<List<Item>> fetchItems() async {
     final snapshot = await _firestore.collection('itemsAvailable').get();
     return snapshot.docs
@@ -43,7 +39,9 @@ class FirestoreService {
   }
 
   Future<void> updateItemStock(String id, int quantity) async {
-    await _firestore.collection('itemsAvailable').doc(id).update({'quantity': quantity});
+    await _firestore.collection('itemsAvailable').doc(id).update({
+      'quantity': quantity,
+    });
   }
 
   // Stream user’s submissions
