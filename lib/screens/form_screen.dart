@@ -21,7 +21,7 @@ class _FormScreenState extends State<FormScreen> {
 
   // Example fields from the SOR form
   // final _companyCodeController = TextEditingController();
-  final _sorNoController = TextEditingController();
+  // final _sorNoController = TextEditingController();
   // final _customerNameController = TextEditingController(); // Not needed if using Dropdown
   final _deliveryInstructionController = TextEditingController();
   final _invoiceNumberController = TextEditingController();
@@ -32,8 +32,8 @@ class _FormScreenState extends State<FormScreen> {
   String? _remark2;
   String? _accountNumber;
   String? _sorNumber;
-  String? _area;
-  String? _paymentTerms;
+  // String? _area;
+  // String? _paymentTerms;
   // String? _postalAddress;
   double? _creditLimit;
   double? _amountDue;
@@ -448,15 +448,46 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
-  Future<void> _submitForm() async {
-    if (_selectedCustomer == null || _selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete all required fields.')),
-      );
-      return;
+  // Step 1: Added a helper method for safe state updates
+  void safeSetState(VoidCallback fn) {
+    if (mounted) {
+      setState(fn);
     }
+  }
 
+  // Step 4: Refactored _submitForm into smaller methods
+  Future<void> _validateForm() async {
+    if (_selectedCustomer == null || _selectedItems.isEmpty) {
+      throw Exception('Please complete all required fields.');
+    }
+  }
+
+  Future<void> _updateInventory() async {
+    for (final item in _selectedItems) {
+      final itemId = item['id'];
+      final purchasedQty = item['quantity'] ?? 0;
+
+      final itemRef = FirebaseFirestore.instance
+          .collection('itemsAvailable')
+          .doc(itemId);
+      final itemSnapshot = await itemRef.get();
+
+      if (itemSnapshot.exists) {
+        final currentStock = itemSnapshot.data()?['quantity'] ?? 0;
+        final updatedStock = (currentStock - purchasedQty).clamp(
+          0,
+          double.infinity,
+        );
+
+        await itemRef.update({'quantity': updatedStock});
+      }
+    }
+  }
+
+  Future<void> _submitForm() async {
     try {
+      await _validateForm();
+
       final now = Timestamp.now();
       final formData = {
         'customerName': _selectedCustomer!['name'],
@@ -492,33 +523,10 @@ class _FormScreenState extends State<FormScreen> {
           .collection('salesRequisitions')
           .add(formData);
       // ✅
-      // Update inventory for each item
-      for (final item in _selectedItems) {
-        final itemId = item['id'];
-        final purchasedQty = item['quantity'] ?? 0;
+      await _updateInventory();
 
-        final itemRef = FirebaseFirestore.instance
-            .collection('itemsAvailable')
-            .doc(itemId);
-        final itemSnapshot = await itemRef.get();
-
-        if (itemSnapshot.exists) {
-          final currentStock = itemSnapshot.data()?['quantity'] ?? 0;
-          final updatedStock = (currentStock - purchasedQty).clamp(
-            0,
-            double.infinity,
-          );
-
-          await itemRef.update({'quantity': updatedStock});
-        }
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Form submitted successfully!')),
-      );
-
-      // Optional: reset form
-      setState(() {
+      safeSetState(() {
+        // Reset form
         _selectedCustomer = null;
         _selectedItems = [];
         _remark1 = '';
@@ -529,44 +537,24 @@ class _FormScreenState extends State<FormScreen> {
         _dispatchDate = null;
       });
 
-      if (!mounted) return;
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Form submitted successfully!')),
+      );
+
+      // ignore: use_build_context_synchronously
       Navigator.pop(context); // Go back to dashboard or previous page
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Submission failed: $e')));
+      // ignore: use_build_context_synchronously
+      handleError(context, 'Submission failed: $e');
     }
   }
 
-  Widget _buildCustomerSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Customer Info',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: _showCustomerSearchDialog,
-          child: InputDecorator(
-            decoration: const InputDecoration(
-              labelText: 'Customer',
-              border: OutlineInputBorder(),
-            ),
-            child: Text(
-              _selectedCustomer?['name'] ?? 'Select a customer',
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        // if (_accountNumber != null) Text('Account #: $_accountNumber'),
-        if (_area != null) Text('Area: $_area'),
-        if (_paymentTerms != null) Text('Terms: $_paymentTerms'),
-        // if (_creditLimit != null) Text('Credit Limit: ₱$_creditLimit'),
-      ],
-    );
+  // Step 5: Centralized error handling
+  void handleError(BuildContext context, String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildItemsSection() {
@@ -672,6 +660,23 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
+  Widget _buildReviewSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Total: ₱${_calculateTotal().toStringAsFixed(2)}'),
+        const SizedBox(height: 10),
+        if (_sorNumber != null) Text('SOR #: $_sorNumber'),
+        if (_accountNumber != null) Text('Account #: $_accountNumber'),
+        if (_remark1 != null)
+          Text('Remark 1: $_remark1', style: TextStyle(color: Colors.red)),
+        if (_remark2 != null)
+          Text('Remark 2: $_remark2', style: TextStyle(color: Colors.red)),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
   bool _isCurrentStepValid(int step) {
     if (step == 0 && _selectedCustomer != null) {
       return true;
@@ -693,47 +698,33 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
+  // Fixed type casting in _buildSteps
   List<Step> _buildSteps() {
-    return [
-      Step(
-        title: const Text('Customer'),
-        content: _buildCustomerSection(),
-        state: _stepValid[0]
-            ? StepState.complete
-            : (_currentStep == 0 ? StepState.editing : StepState.indexed),
-        isActive: _currentStep >= 0,
-      ),
-      Step(
-        title: const Text('Items'),
-        content: _buildItemsSection(),
-        state: _allItems.isNotEmpty
-            ? StepState.complete
-            : (_currentStep == 1 ? StepState.editing : StepState.indexed),
-        isActive: _currentStep >= 1,
-      ),
-      Step(
-        title: const Text('Review & Submit'),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('SOR Number: ${_sorNoController.text}'),
-            Text('Total: ₱${_calculateTotal().toStringAsFixed(2)}'),
-            const SizedBox(height: 10),
-            if (_sorNumber != null) Text('SOR #: $_sorNumber'),
-            if (_accountNumber != null) Text('Account #: $_accountNumber'),
-            if (_remark1 != null)
-              Text('Remark 1: $_remark1', style: TextStyle(color: Colors.red)),
-            if (_remark2 != null)
-              Text('Remark 2: $_remark2', style: TextStyle(color: Colors.red)),
-            const SizedBox(height: 20),
-          ],
+    final steps = [
+      {
+        'title': 'Customer',
+        'content': CustomerSection(
+          selectedCustomer: _selectedCustomer,
+          onTap: _showCustomerSearchDialog,
         ),
-        state: _allItems.isNotEmpty
-            ? StepState.complete
-            : (_currentStep == 2 ? StepState.editing : StepState.indexed),
-        isActive: _currentStep >= 2,
-      ),
+      },
+      {'title': 'Items', 'content': _buildItemsSection()},
+      {'title': 'Review & Submit', 'content': _buildReviewSection()},
     ];
+
+    return steps.asMap().entries.map((entry) {
+      final index = entry.key;
+      final step = entry.value;
+
+      return Step(
+        title: Text(step['title'] as String),
+        content: step['content'] as Widget,
+        state: _stepValid[index]
+            ? StepState.complete
+            : (_currentStep == index ? StepState.editing : StepState.indexed),
+        isActive: _currentStep >= index,
+      );
+    }).toList();
   }
 
   @override
@@ -806,6 +797,48 @@ class _FormScreenState extends State<FormScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class CustomerSection extends StatelessWidget {
+  final Map<String, dynamic>? selectedCustomer;
+  final VoidCallback onTap;
+
+  const CustomerSection({
+    super.key,
+    required this.selectedCustomer,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Customer Info',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onTap,
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Customer',
+              border: OutlineInputBorder(),
+            ),
+            child: Text(
+              selectedCustomer?['name'] ?? 'Select a customer',
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ),
+        if (selectedCustomer?['area'] != null)
+          Text('Area: ${selectedCustomer?['area']}'),
+        if (selectedCustomer?['paymentTerms'] != null)
+          Text('Terms: ${selectedCustomer?['paymentTerms']}'),
+      ],
     );
   }
 }
