@@ -35,29 +35,28 @@ class DashboardScreen extends StatelessWidget {
 
     if (didRequestLogout == true) {
       await FirebaseAuth.instance.signOut();
-      if (context.mounted) {
-        Navigator.pushReplacementNamed(context, '/');
-      }
+      if (!context.mounted) return;
+      Navigator.pushReplacementNamed(context, '/');
     }
   }
 
-  void _navigateToEditForm(BuildContext context, String docId, Map<String, dynamic> data) {
-    Navigator.pushNamed(
-      context,
-      '/editForm',
-      arguments: {'docId': docId, 'data': data},
-    );
-  }
+  // void _navigateToEditForm(BuildContext context, String docId, Map<String, dynamic> data) {
+  //   Navigator.pushNamed(
+  //     context,
+  //     '/editForm',
+  //     arguments: {'docId': docId, 'data': data},
+  //   );
+  // }
 
   void _confirmDelete(BuildContext context, String docId) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Confirm Delete'),
         content: const Text('Are you sure you want to delete this record?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
@@ -66,10 +65,12 @@ class DashboardScreen extends StatelessWidget {
                   .collection('salesRequisitions')
                   .doc(docId)
                   .delete();
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Record deleted.')),
-              );
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Record deleted.')));
             },
             child: const Text('Delete'),
           ),
@@ -138,7 +139,9 @@ class DashboardScreen extends StatelessWidget {
 
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 2,
                 child: ExpansionTile(
                   title: Text(data['customerName'] ?? 'Unknown Customer'),
@@ -153,9 +156,14 @@ class DashboardScreen extends StatelessWidget {
                           Text('Account #: ${data['accountNumber'] ?? ''}'),
                           Text('Area: ${data['area'] ?? ''}'),
                           Text('Payment Terms: ${data['paymentTerms'] ?? ''}'),
-                          Text('Delivery Instruction: ${data['deliveryInstruction'] ?? ''}'),
+                          Text(
+                            'Delivery Instruction: ${data['deliveryInstruction'] ?? ''}',
+                          ),
                           const SizedBox(height: 8),
-                          const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'Items:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           ...List<Widget>.from(
                             (data['items'] as List<dynamic>? ?? []).map((item) {
                               return Padding(
@@ -167,7 +175,9 @@ class DashboardScreen extends StatelessWidget {
                             }),
                           ),
                           const SizedBox(height: 8),
-                          Text('Total Amount: ₱${data['totalAmount']?.toStringAsFixed(2) ?? '0.00'}'),
+                          Text(
+                            'Total Amount: ₱${data['totalAmount']?.toStringAsFixed(2) ?? '0.00'}',
+                          ),
                           Text('Remark 1: ${data['remark1'] ?? ''}'),
                           Text('Remark 2: ${data['remark2'] ?? ''}'),
                           Row(
@@ -177,11 +187,13 @@ class DashboardScreen extends StatelessWidget {
                                 icon: const Icon(Icons.picture_as_pdf),
                                 label: const Text('Preview PDF'),
                                 onPressed: () async {
-                                  final pdfBytes = await generateSalesPDF(data); // your transaction map
+                                  final pdfBytes = await generateSalesPDF(data);
+                                  if (!context.mounted) return;
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => PdfPreviewScreen(pdfBytes: pdfBytes),
+                                      builder: (_) =>
+                                          PdfPreviewScreen(pdfBytes: pdfBytes),
                                     ),
                                   );
                                 },
@@ -194,13 +206,14 @@ class DashboardScreen extends StatelessWidget {
                               IconButton(
                                 icon: const Icon(Icons.delete),
                                 tooltip: 'Delete',
-                                onPressed: () => _confirmDelete(context, doc.id),
+                                onPressed: () =>
+                                    _confirmDelete(context, doc.id),
                               ),
                             ],
                           ),
                         ],
                       ),
-                    )
+                    ),
                   ],
                 ),
               );
