@@ -15,6 +15,7 @@ class PdfPreviewScreen extends StatelessWidget {
     if (Platform.isAndroid) {
       final status = await Permission.storage.request();
       if (!status.isGranted) {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Storage permission denied.")),
         );
@@ -28,22 +29,22 @@ class PdfPreviewScreen extends StatelessWidget {
       final file = File(path);
       await file.writeAsBytes(pdfBytes);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF saved to: $path')),
-      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('PDF saved to: $path')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save PDF: $e')),
-      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save PDF: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('PDF Preview'),
-      ),
+      appBar: AppBar(title: const Text('PDF Preview')),
       body: PdfPreview(
         build: (format) async => pdfBytes,
         canChangePageFormat: false,
