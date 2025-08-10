@@ -20,7 +20,7 @@ class _FormScreenState extends State<FormScreen> {
   int _currentStep = 0;
 
   // Example fields from the SOR form
-  final _companyCodeController = TextEditingController();
+  // final _companyCodeController = TextEditingController();
   final _sorNoController = TextEditingController();
   // final _customerNameController = TextEditingController(); // Not needed if using Dropdown
   final _deliveryInstructionController = TextEditingController();
@@ -34,7 +34,7 @@ class _FormScreenState extends State<FormScreen> {
   String? _sorNumber;
   String? _area;
   String? _paymentTerms;
-  String? _postalAddress;
+  // String? _postalAddress;
   double? _creditLimit;
   double? _amountDue;
   double? _over30Days;
@@ -49,6 +49,7 @@ class _FormScreenState extends State<FormScreen> {
   List<Map<String, dynamic>> _selectedItems = [];
   final _quantityController = TextEditingController();
 
+  // ignore: unused_field
   Item? _selectedItem;
 
   Map<String, String> _customerIdMap = {};
@@ -56,18 +57,20 @@ class _FormScreenState extends State<FormScreen> {
   final List<bool> _stepValid = [false, false, false]; // track validation
 
   void _loadCustomers() async {
-    final snapshot = await FirebaseFirestore.instance.collection('customers').get();
+    final snapshot = await FirebaseFirestore.instance
+        .collection('customers')
+        .get();
 
     if (mounted) {
       setState(() {
         _customers = [];
         _customerIdMap = {};
         for (var doc in snapshot.docs) {
-          final data = doc.data();         // full customer map
+          final data = doc.data(); // full customer map
           final name = data['name'];
 
-          _customers.add(data);            // store full map
-          _customerIdMap[name] = doc.id;   // optional: for ID use
+          _customers.add(data); // store full map
+          _customerIdMap[name] = doc.id; // optional: for ID use
         }
       });
     }
@@ -93,7 +96,7 @@ class _FormScreenState extends State<FormScreen> {
     final creditLimit = _creditLimit;
     final accountNumber = _accountNumber;
     await fetchAccountReceivable(accountNumber!);
-    final amountDue = _amountDue!+totalAmount;
+    final amountDue = _amountDue! + totalAmount;
     final over30Days = _over30Days;
     final unsecuredFunds = _unsecuredFunds;
 
@@ -108,12 +111,11 @@ class _FormScreenState extends State<FormScreen> {
       _remark2 = null;
     }
 
-    if(mounted){
+    if (mounted) {
       setState(() {
         _currentStep += 1;
       });
     }
-
   }
 
   double _calculateTotal() {
@@ -178,12 +180,14 @@ class _FormScreenState extends State<FormScreen> {
         actions: [
           TextButton(
             onPressed: () {
+              if (!mounted) return;
               Navigator.of(context).pop(); // Close dialog
             },
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
+              if (!mounted) return;
               Navigator.of(context).pop(); // Close dialog
               _submitForm(); // Proceed with actual submission
             },
@@ -196,6 +200,7 @@ class _FormScreenState extends State<FormScreen> {
 
   void _showQuantityInput(Item item) async {
     if (_selectedCustomer == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a customer first')),
       );
@@ -213,9 +218,12 @@ class _FormScreenState extends State<FormScreen> {
 
     final itemData = await FirestoreService().fetchItemPrice(item.code);
 
+    if (!mounted) return;
     if (itemData == null || !itemData.containsKey(firestorePriceKey)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No pricing info available for item ${item.name}')),
+        SnackBar(
+          content: Text('No pricing info available for item ${item.name}'),
+        ),
       );
       return;
     }
@@ -239,17 +247,24 @@ class _FormScreenState extends State<FormScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () {
               final qty = int.tryParse(qtyController.text) ?? 0;
 
               if (qty <= 0) {
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Quantity must be greater than 0')),
+                  const SnackBar(
+                    content: Text('Quantity must be greater than 0'),
+                  ),
                 );
                 return;
               } else if (qty > item.stock) {
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
@@ -261,7 +276,9 @@ class _FormScreenState extends State<FormScreen> {
               }
               setState(() {
                 _selectedItems.removeWhere((e) => e['id'] == item.id);
-                final existingIndex = _selectedItems.indexWhere((e) => e['id'] == item.id);
+                final existingIndex = _selectedItems.indexWhere(
+                  (e) => e['id'] == item.id,
+                );
                 final data = {
                   'id': item.id,
                   'name': item.name,
@@ -301,12 +318,18 @@ class _FormScreenState extends State<FormScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
-                      decoration: const InputDecoration(hintText: 'Search customer'),
+                      decoration: const InputDecoration(
+                        hintText: 'Search customer',
+                      ),
                       onChanged: (value) {
                         query = value.toLowerCase();
                         setStateDialog(() {
                           filteredCustomers = _customers
-                              .where((customer) => customer['name'].toLowerCase().contains(query))
+                              .where(
+                                (customer) => customer['name']
+                                    .toLowerCase()
+                                    .contains(query),
+                              )
                               .toList();
                         });
                       },
@@ -322,26 +345,37 @@ class _FormScreenState extends State<FormScreen> {
                           final customer = filteredCustomers[index];
                           return ListTile(
                             title: Text(customer['name']),
-                            subtitle: Text('Acct #: ${customer['accountNumber']}'),
+                            subtitle: Text(
+                              'Acct #: ${customer['accountNumber']}',
+                            ),
                             onTap: () async {
                               setState(() {
                                 _selectedCustomer = customer;
                                 _accountNumber = customer['accountNumber'];
-                                _creditLimit = customer['creditLimit']?.toDouble() ?? 0;
+                                _creditLimit =
+                                    customer['creditLimit']?.toDouble() ?? 0;
                               });
 
                               final customerName = customer['name'];
                               final docId = _customerIdMap[customerName];
                               if (docId != null) {
-                                final doc = await FirebaseFirestore.instance.collection('customers').doc(docId).get();
+                                final doc = await FirebaseFirestore.instance
+                                    .collection('customers')
+                                    .doc(docId)
+                                    .get();
                                 final account = doc['accountNumber'];
-                                final generatedSOR = await generateSORNumber(account);
+                                final generatedSOR = await generateSORNumber(
+                                  account,
+                                );
 
+                                if (!mounted) return;
                                 setState(() {
                                   _accountNumber = account;
                                   _sorNumber = generatedSOR;
                                 });
                               }
+                              if (!mounted) return;
+                              // ignore: use_build_context_synchronously
                               Navigator.pop(context);
                             },
                           );
@@ -353,9 +387,12 @@ class _FormScreenState extends State<FormScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                  },
                   child: const Text('Cancel'),
-                )
+                ),
               ],
             );
           },
@@ -366,8 +403,9 @@ class _FormScreenState extends State<FormScreen> {
 
   void _editSelectedItemQuantity(int index) {
     final currentItem = _selectedItems[index];
-    final TextEditingController editController =
-    TextEditingController(text: currentItem['quantity'].toString());
+    final TextEditingController editController = TextEditingController(
+      text: currentItem['quantity'].toString(),
+    );
 
     showDialog(
       context: context,
@@ -388,14 +426,17 @@ class _FormScreenState extends State<FormScreen> {
               final newQty = int.tryParse(editController.text) ?? 0;
               if (newQty <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Quantity must be greater than 0')),
+                  const SnackBar(
+                    content: Text('Quantity must be greater than 0'),
+                  ),
                 );
                 return;
               }
 
               setState(() {
                 _selectedItems[index]['quantity'] = newQty;
-                _selectedItems[index]['subtotal'] = newQty * currentItem['unitPrice'];
+                _selectedItems[index]['subtotal'] =
+                    newQty * currentItem['unitPrice'];
               });
 
               Navigator.pop(context);
@@ -430,36 +471,48 @@ class _FormScreenState extends State<FormScreen> {
         'invoiceDate': _invoiceDate,
         'remark1': _remark1,
         'remark2': _remark2,
-        'items': _selectedItems.map((item) => {
-          'id': item['id'],
-          'code': item['code'],
-          'name': item['name'],
-          'unitPrice': item['unitPrice'],
-          'quantity': item['quantity'],
-          'subtotal': item['subtotal'],
-        }).toList(),
+        'items': _selectedItems
+            .map(
+              (item) => {
+                'id': item['id'],
+                'code': item['code'],
+                'name': item['name'],
+                'unitPrice': item['unitPrice'],
+                'quantity': item['quantity'],
+                'subtotal': item['subtotal'],
+              },
+            )
+            .toList(),
         'totalAmount': _calculateTotal(),
         'userID': FirebaseAuth.instance.currentUser?.uid,
         'timeStamp': now,
       };
 
-      await FirebaseFirestore.instance.collection('salesRequisitions').add(formData);
-// ✅
-// Update inventory for each item
+      await FirebaseFirestore.instance
+          .collection('salesRequisitions')
+          .add(formData);
+      // ✅
+      // Update inventory for each item
       for (final item in _selectedItems) {
         final itemId = item['id'];
         final purchasedQty = item['quantity'] ?? 0;
 
-        final itemRef = FirebaseFirestore.instance.collection('itemsAvailable').doc(itemId);
+        final itemRef = FirebaseFirestore.instance
+            .collection('itemsAvailable')
+            .doc(itemId);
         final itemSnapshot = await itemRef.get();
 
         if (itemSnapshot.exists) {
           final currentStock = itemSnapshot.data()?['quantity'] ?? 0;
-          final updatedStock = (currentStock - purchasedQty).clamp(0, double.infinity);
+          final updatedStock = (currentStock - purchasedQty).clamp(
+            0,
+            double.infinity,
+          );
 
           await itemRef.update({'quantity': updatedStock});
         }
       }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Form submitted successfully!')),
       );
@@ -476,11 +529,12 @@ class _FormScreenState extends State<FormScreen> {
         _dispatchDate = null;
       });
 
+      if (!mounted) return;
       Navigator.pop(context); // Go back to dashboard or previous page
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Submission failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Submission failed: $e')));
     }
   }
 
@@ -488,7 +542,10 @@ class _FormScreenState extends State<FormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Customer Info', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const Text(
+          'Customer Info',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         const SizedBox(height: 8),
         InkWell(
           onTap: _showCustomerSearchDialog,
@@ -513,7 +570,10 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   Widget _buildItemsSection() {
-    double total = _selectedItems.fold(0.0, (sum, item) => sum + (item['subtotal'] ?? 0.0));
+    double total = _selectedItems.fold(
+      0.0,
+      (currentTotal, item) => currentTotal + (item['subtotal'] ?? 0.0),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,7 +592,9 @@ class _FormScreenState extends State<FormScreen> {
               }
 
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Text('No items found.'); // Or some other placeholder
+                return const Text(
+                  'No items found.',
+                ); // Or some other placeholder
               }
 
               _allItems = snapshot.data!;
@@ -549,7 +611,8 @@ class _FormScreenState extends State<FormScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
-                            'This item is out of stock and cannot be selected.'),
+                          'This item is out of stock and cannot be selected.',
+                        ),
                       ),
                     );
                   }
@@ -559,7 +622,10 @@ class _FormScreenState extends State<FormScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        const Text('Selected Items:', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'Selected Items:',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 6),
 
         ..._selectedItems.asMap().entries.map((entry) {
@@ -601,7 +667,7 @@ class _FormScreenState extends State<FormScreen> {
         Text(
           'Total: ₱${total.toStringAsFixed(2)}',
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        )
+        ),
       ],
     );
   }
@@ -616,7 +682,7 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   void _handleStepContinue() async {
-    final isGoingToFinalStep = _currentStep+1 == _buildSteps().length - 1;
+    final isGoingToFinalStep = _currentStep + 1 == _buildSteps().length - 1;
     print(isGoingToFinalStep);
     if (isGoingToFinalStep) {
       final total = _calculateTotal();
@@ -656,12 +722,15 @@ class _FormScreenState extends State<FormScreen> {
             const SizedBox(height: 10),
             if (_sorNumber != null) Text('SOR #: $_sorNumber'),
             if (_accountNumber != null) Text('Account #: $_accountNumber'),
-            if (_remark1 != null) Text('Remark 1: $_remark1', style: TextStyle(color: Colors.red)),
-            if (_remark2 != null) Text('Remark 2: $_remark2', style: TextStyle(color: Colors.red)), const SizedBox(height: 20),
+            if (_remark1 != null)
+              Text('Remark 1: $_remark1', style: TextStyle(color: Colors.red)),
+            if (_remark2 != null)
+              Text('Remark 2: $_remark2', style: TextStyle(color: Colors.red)),
+            const SizedBox(height: 20),
           ],
         ),
         state: _allItems.isNotEmpty
-        ? StepState.complete
+            ? StepState.complete
             : (_currentStep == 2 ? StepState.editing : StepState.indexed),
         isActive: _currentStep >= 2,
       ),
@@ -703,23 +772,31 @@ class _FormScreenState extends State<FormScreen> {
                             ),
                           const SizedBox(width: 10),
                           if (_currentStep < _buildSteps().length - 1)
-                          OutlinedButton(
-                            onPressed: () {
-                              // Example check for current step validity before advancing
-                              if (_isCurrentStepValid(_currentStep)) {
-                                details.onStepContinue?.call();
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Please complete this step before continuing.')),
-                                );
-                              }
-                            },
-                            child: const Text('Next'),
-                          ) else if (_currentStep == _buildSteps().length - 1)
-                          OutlinedButton(
-                          onPressed: _confirmAndSubmit,
-                          child: const Text('Submit'),
-                          ),
+                            OutlinedButton(
+                              onPressed: () {
+                                if (_isCurrentStepValid(_currentStep)) {
+                                  details.onStepContinue?.call();
+                                } else {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Please complete this step before continuing.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: const Text('Next'),
+                            )
+                          else if (_currentStep == _buildSteps().length - 1)
+                            OutlinedButton(
+                              onPressed: () {
+                                if (!mounted) return;
+                                _confirmAndSubmit();
+                              },
+                              child: const Text('Submit'),
+                            ),
                         ],
                       ),
                     );
