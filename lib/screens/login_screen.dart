@@ -19,10 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _emailError;
   String? _passwordError;
 
-  // Form Key for validation (optional but good practice for more complex forms)
-  final _formKey = GlobalKey<FormState>();
-
-
   Future<void> _login() async {
     // Reset previous errors
     setState(() {
@@ -34,9 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // Basic client-side validation
     bool isValid = true;
-    if (_emailController.text
-        .trim()
-        .isEmpty) {
+    if (_emailController.text.trim().isEmpty) {
       setState(() {
         _emailError = "Email cannot be empty";
       });
@@ -63,7 +57,6 @@ class _LoginScreenState extends State<LoginScreen> {
     //   isValid = false;
     // }
 
-
     if (!isValid) {
       setState(() {
         _loading = false;
@@ -71,13 +64,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return; // Stop if client-side validation fails
     }
 
-
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-      if (mounted) { // Check if the widget is still in the tree
+      if (mounted) {
+        // Check if the widget is still in the tree
         Navigator.pushReplacementNamed(context, '/home');
       }
     } on FirebaseAuthException catch (e) {
@@ -86,8 +79,8 @@ class _LoginScreenState extends State<LoginScreen> {
           // Handle specific Firebase Auth errors and map them to fields if possible
           if (e.code == 'user-not-found' || e.code == 'invalid-email') {
             _emailError = 'Invalid email or user not found.';
-          } else
-          if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+          } else if (e.code == 'wrong-password' ||
+              e.code == 'invalid-credential') {
             _passwordError = 'Incorrect password.';
           } else {
             // Generic error for other Firebase issues
@@ -95,7 +88,8 @@ class _LoginScreenState extends State<LoginScreen> {
             // like the original _error Text widget you had.
             _emailError = 'Login failed. Check your credentials.';
             print(
-                'Firebase Auth Error: ${e.message}'); // Log the detailed error
+              'Firebase Auth Error: ${e.message}',
+            ); // Log the detailed error
           }
         });
       }
@@ -120,12 +114,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: SingleChildScrollView( // Added SingleChildScrollView for smaller screens
+        child: SingleChildScrollView(
+          // Added SingleChildScrollView for smaller screens
           child: Card(
             margin: const EdgeInsets.all(24),
             elevation: 8,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(24),
               // Wrap with Form widget if using _formKey for validation
@@ -134,8 +130,10 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text("Sales App Login", style: TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.bold)),
+                  const Text(
+                    "Sales App Login",
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 24),
                   TextField(
                     controller: _emailController,
@@ -193,17 +191,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   //   ),
                   ElevatedButton.icon(
                     onPressed: _loading ? null : _login,
-                    icon: _loading ? Container(width: 24,
-                        height: 24,
-                        padding: const EdgeInsets.all(2.0),
-                        child: const CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 3,)) : const Icon(
-                        Icons.login),
+                    icon: _loading
+                        ? Container(
+                            width: 24,
+                            height: 24,
+                            padding: const EdgeInsets.all(2.0),
+                            child: const CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 3,
+                            ),
+                          )
+                        : const Icon(Icons.login),
                     label: const Text("Login"),
                     style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 30, vertical: 15),
-                        textStyle: const TextStyle(fontSize: 16)
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 15,
+                      ),
+                      textStyle: const TextStyle(fontSize: 16),
                     ),
                   ),
                 ],
