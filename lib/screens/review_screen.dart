@@ -4,21 +4,25 @@ import '../services/firestore_service.dart';
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({super.key});
 
-  Future<void> _submitData(BuildContext context, Map<String, dynamic> formData) async {
+  Future<void> _submitData(
+    BuildContext context,
+    Map<String, dynamic> formData,
+  ) async {
     try {
-        await FirestoreService().submitSOR(formData);
+      await FirestoreService().submitSOR(formData);
+      if (!context.mounted) return;
       Navigator.pushReplacementNamed(context, '/confirmation');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: ${e.toString()}")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final Map<String, dynamic> formData =
-    ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+        ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Review Submission")),
@@ -26,10 +30,12 @@ class ReviewScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            ...formData.entries.map((entry) => ListTile(
-              title: Text(entry.key),
-              subtitle: Text(entry.value.toString()),
-            )),
+            ...formData.entries.map(
+              (entry) => ListTile(
+                title: Text(entry.key),
+                subtitle: Text(entry.value.toString()),
+              ),
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () => _submitData(context, formData),
