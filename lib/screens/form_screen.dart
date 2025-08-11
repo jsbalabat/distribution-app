@@ -304,7 +304,7 @@ class _FormScreenState extends State<FormScreen> {
       context: context,
       builder: (context) => EditQuantityDialog(
         itemName: currentItem['name'],
-        currentQuantity: currentItem['quantity'],
+        currentQuantity: (currentItem['quantity'] as num).toInt(),
         onUpdate: (newQty) {
           setState(() {
             _selectedItems[index]['quantity'] = newQty;
