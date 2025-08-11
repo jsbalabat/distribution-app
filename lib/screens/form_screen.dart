@@ -12,6 +12,13 @@ import '../widgets/customer_search_dialog.dart';
 import '../widgets/edit_quantity_dialog.dart';
 import '../widgets/confirmation_dialog.dart';
 
+class FormStepData {
+  final String title;
+  final Widget content;
+
+  FormStepData({required this.title, required this.content});
+}
+
 class FormScreen extends StatefulWidget {
   const FormScreen({super.key});
 
@@ -449,18 +456,17 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   List<Step> _buildSteps() {
-    final steps = [
-      {
-        'title': 'Customer',
-        'content': CustomerSection(
+    final List<FormStepData> steps = [
+      FormStepData(
+        title: 'Customer',
+        content: CustomerSection(
           selectedCustomer: _selectedCustomer,
           onTap: _showCustomerSearchDialog,
         ),
-      },
-      {
-        'title': 'Items',
-        'content': ItemsSection(
-          // Pass loading state and items directly without FutureBuilder
+      ),
+      FormStepData(
+        title: 'Items',
+        content: ItemsSection(
           isLoading: _isLoadingItems,
           loadError: _itemLoadError,
           allItems: _allItems,
@@ -487,23 +493,22 @@ class _FormScreenState extends State<FormScreen> {
               _selectedItems.removeAt(index);
             });
           },
-          // Add a refresh callback
           onRefresh: () {
             _loadItems();
             return Future.value();
           },
         ),
-      },
-      {
-        'title': 'Review & Submit',
-        'content': ReviewSection(
+      ),
+      FormStepData(
+        title: 'Review & Submit',
+        content: ReviewSection(
           totalAmount: _calculateTotal(),
           sorNumber: _sorNumber,
           accountNumber: _accountNumber,
           remark1: _remark1,
           remark2: _remark2,
         ),
-      },
+      ),
     ];
 
     return steps.asMap().entries.map((entry) {
@@ -511,8 +516,8 @@ class _FormScreenState extends State<FormScreen> {
       final step = entry.value;
 
       return Step(
-        title: Text(step['title'] as String),
-        content: step['content'] as Widget,
+        title: Text(step.title), // No type casting needed
+        content: step.content, // No type casting needed
         state: _stepValid[index]
             ? StepState.complete
             : (_currentStep == index ? StepState.editing : StepState.indexed),
