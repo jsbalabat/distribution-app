@@ -1,13 +1,16 @@
-// import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
-// import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
-import './../models/item_model.dart';
-import './../widgets/item_selector.dart';
-import './../widgets/customer_section.dart';
+import '../models/item_model.dart';
+import '../widgets/customer_section.dart';
+import '../widgets/items_section.dart';
+import '../widgets/review_section.dart';
+import '../widgets/quantity_input_dialog.dart';
+import '../widgets/customer_search_dialog.dart';
+import '../widgets/edit_quantity_dialog.dart';
+import '../widgets/confirmation_dialog.dart';
 
 class FormScreen extends StatefulWidget {
   const FormScreen({super.key});
@@ -20,10 +23,6 @@ class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormState>();
   int _currentStep = 0;
 
-  // Example fields from the SOR form
-  // final _companyCodeController = TextEditingController();
-  // final _sorNoController = TextEditingController();
-  // final _customerNameController = TextEditingController(); // Not needed if using Dropdown
   final _deliveryInstructionController = TextEditingController();
   final _invoiceNumberController = TextEditingController();
   final _itemDescriptionController = TextEditingController();
@@ -33,9 +32,6 @@ class _FormScreenState extends State<FormScreen> {
   String? _remark2;
   String? _accountNumber;
   String? _sorNumber;
-  // String? _area;
-  // String? _paymentTerms;
-  // String? _postalAddress;
   double? _creditLimit;
   double? _amountDue;
   double? _over30Days;
@@ -46,7 +42,7 @@ class _FormScreenState extends State<FormScreen> {
   DateTime? _dispatchDate;
   DateTime? _invoiceDate;
 
-  List<Item> _allItems = [];
+  final List<Item> _allItems = [];
   List<Map<String, dynamic>> _selectedItems = [];
   final _quantityController = TextEditingController();
 
@@ -133,7 +129,6 @@ class _FormScreenState extends State<FormScreen> {
     final dateStr = DateFormat('yyMMdd').format(now); // '250620'
 
     // Build prefix: PAC001-250620-
-    // final prefix = '$accountNumber-$dateStr';
     final prefix = 'HDI1-$dateStr';
 
     // Query Firestore for count of existing SORs with that prefix
@@ -175,26 +170,10 @@ class _FormScreenState extends State<FormScreen> {
   void _confirmAndSubmit() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Submission'),
-        content: const Text('Are you sure you want to submit this form?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              if (!mounted) return;
-              Navigator.of(context).pop(); // Close dialog
-            },
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (!mounted) return;
-              Navigator.of(context).pop(); // Close dialog
-              _submitForm(); // Proceed with actual submission
-            },
-            child: const Text('Yes, Submit'),
-          ),
-        ],
+      builder: (context) => ConfirmationDialog(
+        title: 'Confirm Submission',
+        message: 'Are you sure you want to submit this form?',
+        onConfirm: _submitForm,
       ),
     );
   }
@@ -231,238 +210,96 @@ class _FormScreenState extends State<FormScreen> {
 
     final autoPrice = (itemData[firestorePriceKey] ?? 0).toDouble();
 
-    final qtyController = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add ${item.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: qtyController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Quantity'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final qty = int.tryParse(qtyController.text) ?? 0;
-
-              if (qty <= 0) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Quantity must be greater than 0'),
-                  ),
-                );
-                return;
-              } else if (qty > item.stock) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Quantity cannot exceed available stock (Stock: ${item.stock}).',
-                    ),
-                  ),
-                );
-                return;
-              }
-              setState(() {
-                _selectedItems.removeWhere((e) => e['id'] == item.id);
-                final existingIndex = _selectedItems.indexWhere(
-                  (e) => e['id'] == item.id,
-                );
-                final data = {
-                  'id': item.id,
-                  'name': item.name,
-                  'code': item.code,
-                  'quantity': qty,
-                  'unitPrice': autoPrice,
-                  'subtotal': qty * autoPrice,
-                };
-                if (existingIndex != -1) {
-                  _selectedItems[existingIndex] = data;
-                } else {
-                  _selectedItems.add(data);
-                }
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('Add'),
-          ),
-        ],
+      builder: (context) => QuantityInputDialog(
+        item: item,
+        autoPrice: autoPrice,
+        onAdd: (qty) {
+          setState(() {
+            _selectedItems.removeWhere((e) => e['id'] == item.id);
+            final data = {
+              'id': item.id,
+              'name': item.name,
+              'code': item.code,
+              'quantity': qty,
+              'unitPrice': autoPrice,
+              'subtotal': qty * autoPrice,
+            };
+            _selectedItems.add(data);
+          });
+        },
       ),
     );
   }
 
   void _showCustomerSearchDialog() {
-    String query = '';
-    List<Map<String, dynamic>> filteredCustomers = [..._customers];
-
     showDialog(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return AlertDialog(
-              title: const Text('Select Customer'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(
-                        hintText: 'Search customer',
-                      ),
-                      onChanged: (value) {
-                        query = value.toLowerCase();
-                        setStateDialog(() {
-                          filteredCustomers = _customers
-                              .where(
-                                (customer) => customer['name']
-                                    .toLowerCase()
-                                    .contains(query),
-                              )
-                              .toList();
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 300,
-                      width: 300,
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filteredCustomers.length,
-                        itemBuilder: (context, index) {
-                          final customer = filteredCustomers[index];
-                          return ListTile(
-                            title: Text(customer['name']),
-                            subtitle: Text(
-                              'Acct #: ${customer['accountNumber']}',
-                            ),
-                            onTap: () async {
-                              setState(() {
-                                _selectedCustomer = customer;
-                                _accountNumber = customer['accountNumber'];
-                                _creditLimit =
-                                    customer['creditLimit']?.toDouble() ?? 0;
-                              });
+      builder: (context) => CustomerSearchDialog(
+        customers: _customers,
+        onCustomerSelected: (customer) async {
+          setState(() {
+            _selectedCustomer = customer;
+            _accountNumber = customer['accountNumber'];
+            _creditLimit = customer['creditLimit']?.toDouble() ?? 0;
+          });
 
-                              final customerName = customer['name'];
-                              final docId = _customerIdMap[customerName];
-                              if (docId != null) {
-                                final doc = await FirebaseFirestore.instance
-                                    .collection('customers')
-                                    .doc(docId)
-                                    .get();
-                                final account = doc['accountNumber'];
-                                final generatedSOR = await generateSORNumber(
-                                  account,
-                                );
+          final customerName = customer['name'];
+          final docId = _customerIdMap[customerName];
+          if (docId != null) {
+            final doc = await FirebaseFirestore.instance
+                .collection('customers')
+                .doc(docId)
+                .get();
+            final account = doc['accountNumber'];
+            final generatedSOR = await generateSORNumber(account);
 
-                                if (!mounted) return;
-                                setState(() {
-                                  _accountNumber = account;
-                                  _sorNumber = generatedSOR;
-                                });
-                              }
-                              if (!mounted) return;
-                              // ignore: use_build_context_synchronously
-                              Navigator.pop(context);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    if (!mounted) return;
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Cancel'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+            if (!mounted) return;
+            setState(() {
+              _accountNumber = account;
+              _sorNumber = generatedSOR;
+            });
+          }
+        },
+      ),
     );
   }
 
   void _editSelectedItemQuantity(int index) {
     final currentItem = _selectedItems[index];
-    final TextEditingController editController = TextEditingController(
-      text: currentItem['quantity'].toString(),
-    );
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit Quantity: ${currentItem['name']}'),
-        content: TextField(
-          controller: editController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'New Quantity'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final newQty = int.tryParse(editController.text) ?? 0;
-              if (newQty <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Quantity must be greater than 0'),
-                  ),
-                );
-                return;
-              }
-
-              setState(() {
-                _selectedItems[index]['quantity'] = newQty;
-                _selectedItems[index]['subtotal'] =
-                    newQty * currentItem['unitPrice'];
-              });
-
-              Navigator.pop(context);
-            },
-            child: const Text('Update'),
-          ),
-        ],
+      builder: (context) => EditQuantityDialog(
+        itemName: currentItem['name'],
+        currentQuantity: currentItem['quantity'],
+        onUpdate: (newQty) {
+          setState(() {
+            _selectedItems[index]['quantity'] = newQty;
+            _selectedItems[index]['subtotal'] =
+                newQty * currentItem['unitPrice'];
+          });
+        },
       ),
     );
   }
 
-  // Step 1: Added a helper method for safe state updates
+  // Safe state updates
   void safeSetState(VoidCallback fn) {
     if (mounted) {
       setState(fn);
     }
   }
 
-  // Step 4: Refactored _submitForm into smaller methods
+  // Form validation
   Future<void> _validateForm() async {
     if (_selectedCustomer == null || _selectedItems.isEmpty) {
       throw Exception('Please complete all required fields.');
     }
   }
 
+  // Update inventory after form submission
   Future<void> _updateInventory() async {
     for (final item in _selectedItems) {
       final itemId = item['id'];
@@ -485,6 +322,7 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
+  // Submit form data to Firestore
   Future<void> _submitForm() async {
     try {
       await _validateForm();
@@ -523,7 +361,7 @@ class _FormScreenState extends State<FormScreen> {
       await FirebaseFirestore.instance
           .collection('salesRequisitions')
           .add(formData);
-      // ✅
+
       await _updateInventory();
 
       safeSetState(() {
@@ -538,144 +376,24 @@ class _FormScreenState extends State<FormScreen> {
         _dispatchDate = null;
       });
 
-      // ignore: use_build_context_synchronously
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Form submitted successfully!')),
       );
 
-      // ignore: use_build_context_synchronously
+      if (!mounted) return;
       Navigator.pop(context); // Go back to dashboard or previous page
     } catch (e) {
-      // ignore: use_build_context_synchronously
+      if (!mounted) return;
       handleError(context, 'Submission failed: $e');
     }
   }
 
-  // Step 5: Centralized error handling
+  // Centralized error handling
   void handleError(BuildContext context, String message) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Widget _buildItemsSection() {
-    double total = _selectedItems.fold(
-      0.0,
-      (currentTotal, item) => currentTotal + (item['subtotal'] ?? 0.0),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: 500,
-          child: FutureBuilder<List<Item>>(
-            future: FirestoreService().fetchItems(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return const Text('Error loading items');
-              }
-
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Text(
-                  'No items found.',
-                ); // Or some other placeholder
-              }
-
-              _allItems = snapshot.data!;
-              // print('Items passed to ItemSelector: $_allItems'); // Verify for debugging
-              return ItemSelector(
-                items: _allItems, // <--- Crucial part
-                onItemSelected: (item) {
-                  if (item.stock > 0) {
-                    setState(() {
-                      _selectedItem = item;
-                    });
-                    _showQuantityInput(item);
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'This item is out of stock and cannot be selected.',
-                        ),
-                      ),
-                    );
-                  }
-                },
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Selected Items:',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 6),
-
-        ..._selectedItems.asMap().entries.map((entry) {
-          final index = entry.key;
-          final item = entry.value;
-
-          return Card(
-            child: ListTile(
-              title: Text(item['name']),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Qty: ${item['quantity']}'),
-                  Text('Unit Price: ₱${item['unitPrice'].toStringAsFixed(2)}'),
-                  Text('Subtotal: ₱${item['subtotal'].toStringAsFixed(2)}'),
-                ],
-              ),
-              trailing: Wrap(
-                spacing: 12,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.blue),
-                    onPressed: () => _editSelectedItemQuantity(index),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
-                      setState(() {
-                        _selectedItems.removeAt(index);
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-        const SizedBox(height: 10),
-        Text(
-          'Total: ₱${total.toStringAsFixed(2)}',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReviewSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Total: ₱${_calculateTotal().toStringAsFixed(2)}'),
-        const SizedBox(height: 10),
-        if (_sorNumber != null) Text('SOR #: $_sorNumber'),
-        if (_accountNumber != null) Text('Account #: $_accountNumber'),
-        if (_remark1 != null)
-          Text('Remark 1: $_remark1', style: TextStyle(color: Colors.red)),
-        if (_remark2 != null)
-          Text('Remark 2: $_remark2', style: TextStyle(color: Colors.red)),
-        const SizedBox(height: 20),
-      ],
-    );
   }
 
   bool _isCurrentStepValid(int step) {
@@ -699,7 +417,6 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
-  // Fixed type casting in _buildSteps
   List<Step> _buildSteps() {
     final steps = [
       {
@@ -709,8 +426,45 @@ class _FormScreenState extends State<FormScreen> {
           onTap: _showCustomerSearchDialog,
         ),
       },
-      {'title': 'Items', 'content': _buildItemsSection()},
-      {'title': 'Review & Submit', 'content': _buildReviewSection()},
+      {
+        'title': 'Items',
+        'content': ItemsSection(
+          allItems: _allItems,
+          selectedItems: _selectedItems,
+          onItemSelected: (item) {
+            if (item.stock > 0) {
+              setState(() {
+                _selectedItem = item;
+              });
+              _showQuantityInput(item);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'This item is out of stock and cannot be selected.',
+                  ),
+                ),
+              );
+            }
+          },
+          onEditQuantity: _editSelectedItemQuantity,
+          onDeleteItem: (index) {
+            setState(() {
+              _selectedItems.removeAt(index);
+            });
+          },
+        ),
+      },
+      {
+        'title': 'Review & Submit',
+        'content': ReviewSection(
+          totalAmount: _calculateTotal(),
+          sorNumber: _sorNumber,
+          accountNumber: _accountNumber,
+          remark1: _remark1,
+          remark2: _remark2,
+        ),
+      },
     ];
 
     return steps.asMap().entries.map((entry) {
@@ -770,7 +524,7 @@ class _FormScreenState extends State<FormScreen> {
                                 } else {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
+                                    const SnackBar(
                                       content: Text(
                                         'Please complete this step before continuing.',
                                       ),
