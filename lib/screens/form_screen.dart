@@ -42,7 +42,10 @@ class _FormScreenState extends State<FormScreen> {
   DateTime? _dispatchDate;
   DateTime? _invoiceDate;
 
-  final List<Item> _allItems = [];
+  List<Item> _allItems = [];
+  bool _isLoadingItems = false;
+  String? _itemLoadError;
+
   List<Map<String, dynamic>> _selectedItems = [];
   final _quantityController = TextEditingController();
 
@@ -73,10 +76,38 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
+  // Added method to fetch items in parent
+  Future<void> _loadItems() async {
+    if (_isLoadingItems) return;
+
+    setState(() {
+      _isLoadingItems = true;
+      _itemLoadError = null;
+    });
+
+    try {
+      final items = await FirestoreService().fetchItems();
+      if (mounted) {
+        setState(() {
+          _allItems = items;
+          _isLoadingItems = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _itemLoadError = e.toString();
+          _isLoadingItems = false;
+        });
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _loadCustomers();
+    _loadItems(); // Add item loading in initState
   }
 
   @override
@@ -429,6 +460,9 @@ class _FormScreenState extends State<FormScreen> {
       {
         'title': 'Items',
         'content': ItemsSection(
+          // Pass loading state and items directly without FutureBuilder
+          isLoading: _isLoadingItems,
+          loadError: _itemLoadError,
           allItems: _allItems,
           selectedItems: _selectedItems,
           onItemSelected: (item) {
@@ -452,6 +486,11 @@ class _FormScreenState extends State<FormScreen> {
             setState(() {
               _selectedItems.removeAt(index);
             });
+          },
+          // Add a refresh callback
+          onRefresh: () {
+            _loadItems();
+            return Future.value();
           },
         ),
       },

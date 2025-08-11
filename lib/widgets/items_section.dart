@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/item_model.dart';
-import '../services/firestore_service.dart';
 import './item_selector.dart';
 
 class ItemsSection extends StatelessWidget {
@@ -9,6 +8,9 @@ class ItemsSection extends StatelessWidget {
   final Function(Item) onItemSelected;
   final Function(int) onEditQuantity;
   final Function(int) onDeleteItem;
+  final Future<void> Function() onRefresh;
+  final bool isLoading;
+  final String? loadError;
 
   const ItemsSection({
     super.key,
@@ -17,6 +19,9 @@ class ItemsSection extends StatelessWidget {
     required this.onItemSelected,
     required this.onEditQuantity,
     required this.onDeleteItem,
+    required this.onRefresh,
+    required this.isLoading,
+    this.loadError,
   });
 
   @override
@@ -31,26 +36,9 @@ class ItemsSection extends StatelessWidget {
       children: [
         SizedBox(
           height: 500,
-          child: FutureBuilder<List<Item>>(
-            future: FirestoreService().fetchItems(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return const Text('Error loading items');
-              }
-
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Text('No items found.');
-              }
-
-              return ItemSelector(
-                items: snapshot.data!,
-                onItemSelected: onItemSelected,
-              );
-            },
+          child: RefreshIndicator(
+            onRefresh: onRefresh,
+            child: _buildItemsList(),
           ),
         ),
         const SizedBox(height: 10),
@@ -98,5 +86,30 @@ class ItemsSection extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Widget _buildItemsList() {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (loadError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Error loading items: $loadError'),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: onRefresh, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+
+    if (allItems.isEmpty) {
+      return const Center(child: Text('No items found.'));
+    }
+
+    return ItemSelector(items: allItems, onItemSelected: onItemSelected);
   }
 }
