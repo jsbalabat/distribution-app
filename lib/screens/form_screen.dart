@@ -11,6 +11,7 @@ import '../widgets/quantity_input_dialog.dart';
 import '../widgets/customer_search_dialog.dart';
 import '../widgets/edit_quantity_dialog.dart';
 import '../widgets/confirmation_dialog.dart';
+import '../utils/error_types.dart';
 
 class FormStepData {
   final String title;
@@ -25,8 +26,6 @@ class FormScreen extends StatefulWidget {
   @override
   State<FormScreen> createState() => _FormScreenState();
 }
-
-enum ErrorType { validation, network, permission, storage, unknown }
 
 class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormState>();
