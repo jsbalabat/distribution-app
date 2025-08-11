@@ -26,6 +26,8 @@ class FormScreen extends StatefulWidget {
   State<FormScreen> createState() => _FormScreenState();
 }
 
+enum ErrorType { validation, network, permission, storage, unknown }
+
 class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormState>();
   int _currentStep = 0;
@@ -83,6 +85,49 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
+  // Centralized error handling
+  void handleError(
+    BuildContext context,
+    String message, {
+    ErrorType type = ErrorType.unknown,
+  }) {
+    // Customize message based on error type
+    String displayMessage;
+
+    switch (type) {
+      case ErrorType.validation:
+        displayMessage = 'Validation error: $message';
+        break;
+      case ErrorType.network:
+        displayMessage =
+            'Network error: $message. Please check your connection.';
+        break;
+      case ErrorType.permission:
+        displayMessage = 'Permission denied: $message';
+        break;
+      case ErrorType.storage:
+        displayMessage = 'Storage error: $message';
+        break;
+      case ErrorType.unknown:
+        displayMessage = 'Error: $message';
+        break;
+    }
+
+    // Log error (in a real app, you might want to use a logging service)
+    debugPrint('Error: $displayMessage');
+
+    // Show snackbar to user
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(displayMessage),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   // Added method to fetch items in parent
   Future<void> _loadItems() async {
     if (_isLoadingItems) return;
@@ -106,6 +151,7 @@ class _FormScreenState extends State<FormScreen> {
           _itemLoadError = e.toString();
           _isLoadingItems = false;
         });
+        handleError(context, e.toString(), type: ErrorType.network);
       }
     }
   }
@@ -183,20 +229,35 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   Future<void> fetchAccountReceivable(String accountNumber) async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('accountReceivable')
-        .where('accountNumber', isEqualTo: accountNumber)
-        .limit(1)
-        .get();
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('accountReceivable')
+          .where('accountNumber', isEqualTo: accountNumber)
+          .limit(1)
+          .get();
 
-    if (snapshot.docs.isNotEmpty && mounted) {
-      final data = snapshot.docs.first.data();
-      setState(() {
-        _amountDue = (data['amountDue'] ?? 0).toDouble();
-        _over30Days = (data['overThirtyDays'] ?? 0).toDouble();
-        _unsecuredFunds = (data['unsecured'] ?? 0).toDouble();
-      });
-    } else {
+      if (snapshot.docs.isNotEmpty && mounted) {
+        final data = snapshot.docs.first.data();
+        setState(() {
+          _amountDue = (data['amountDue'] ?? 0).toDouble();
+          _over30Days = (data['overThirtyDays'] ?? 0).toDouble();
+          _unsecuredFunds = (data['unsecured'] ?? 0).toDouble();
+        });
+      } else {
+        setState(() {
+          _amountDue = 0;
+          _over30Days = 0;
+          _unsecuredFunds = 0;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      handleError(
+        context,
+        'Failed to fetch account receivable data: $e',
+        type: ErrorType.network,
+      );
+      // Set default values on error
       setState(() {
         _amountDue = 0;
         _over30Days = 0;
@@ -219,8 +280,10 @@ class _FormScreenState extends State<FormScreen> {
   void _showQuantityInput(Item item) async {
     if (_selectedCustomer == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a customer first')),
+      handleError(
+        context,
+        'Please select a customer first',
+        type: ErrorType.validation,
       );
       return;
     }
@@ -234,41 +297,50 @@ class _FormScreenState extends State<FormScreen> {
     final rawPriceLevel = _selectedCustomer?['priceLevel'] ?? 'regularPrice';
     final firestorePriceKey = priceLevelMap[rawPriceLevel] ?? 'regularPrice';
 
-    final itemData = await FirestoreService().fetchItemPrice(item.code);
+    try {
+      final itemData = await FirestoreService().fetchItemPrice(item.code);
 
-    if (!mounted) return;
-    if (itemData == null || !itemData.containsKey(firestorePriceKey)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No pricing info available for item ${item.name}'),
+      if (!mounted) return;
+      if (itemData == null || !itemData.containsKey(firestorePriceKey)) {
+        handleError(
+          context,
+          'No pricing info available for item ${item.name}',
+          type: ErrorType.validation,
+        );
+        return;
+      }
+
+      final autoPrice = (itemData[firestorePriceKey] ?? 0).toDouble();
+
+      showDialog(
+        context: context,
+        builder: (context) => QuantityInputDialog(
+          item: item,
+          autoPrice: autoPrice,
+          onAdd: (qty) {
+            setState(() {
+              _selectedItems.removeWhere((e) => e['id'] == item.id);
+              final data = {
+                'id': item.id,
+                'name': item.name,
+                'code': item.code,
+                'quantity': qty,
+                'unitPrice': autoPrice,
+                'subtotal': qty * autoPrice,
+              };
+              _selectedItems.add(data);
+            });
+          },
         ),
       );
-      return;
+    } catch (e) {
+      if (!mounted) return;
+      handleError(
+        context,
+        'Failed to fetch item price: $e',
+        type: ErrorType.network,
+      );
     }
-
-    final autoPrice = (itemData[firestorePriceKey] ?? 0).toDouble();
-
-    showDialog(
-      context: context,
-      builder: (context) => QuantityInputDialog(
-        item: item,
-        autoPrice: autoPrice,
-        onAdd: (qty) {
-          setState(() {
-            _selectedItems.removeWhere((e) => e['id'] == item.id);
-            final data = {
-              'id': item.id,
-              'name': item.name,
-              'code': item.code,
-              'quantity': qty,
-              'unitPrice': autoPrice,
-              'subtotal': qty * autoPrice,
-            };
-            _selectedItems.add(data);
-          });
-        },
-      ),
-    );
   }
 
   void _showCustomerSearchDialog() {
@@ -332,8 +404,12 @@ class _FormScreenState extends State<FormScreen> {
 
   // Form validation
   Future<void> _validateForm() async {
-    if (_selectedCustomer == null || _selectedItems.isEmpty) {
-      throw Exception('Please complete all required fields.');
+    if (_selectedCustomer == null) {
+      throw Exception('Please select a customer.');
+    }
+
+    if (_selectedItems.isEmpty) {
+      throw Exception('Please select at least one item.');
     }
   }
 
@@ -360,7 +436,6 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
-  // Submit form data to Firestore
   Future<void> _submitForm() async {
     try {
       await _validateForm();
@@ -396,11 +471,31 @@ class _FormScreenState extends State<FormScreen> {
         'timeStamp': now,
       };
 
-      await FirebaseFirestore.instance
-          .collection('salesRequisitions')
-          .add(formData);
+      try {
+        await FirebaseFirestore.instance
+            .collection('salesRequisitions')
+            .add(formData);
+      } catch (e) {
+        if (!mounted) return;
+        handleError(
+          context,
+          'Failed to submit form: $e',
+          type: ErrorType.network,
+        );
+        return;
+      }
 
-      await _updateInventory();
+      try {
+        await _updateInventory();
+      } catch (e) {
+        if (!mounted) return;
+        handleError(
+          context,
+          'Form was submitted but inventory update failed: $e',
+          type: ErrorType.storage,
+        );
+        // We don't return here because the form was submitted successfully
+      }
 
       safeSetState(() {
         // Reset form
@@ -423,15 +518,8 @@ class _FormScreenState extends State<FormScreen> {
       Navigator.pop(context); // Go back to dashboard or previous page
     } catch (e) {
       if (!mounted) return;
-      handleError(context, 'Submission failed: $e');
+      handleError(context, e.toString(), type: ErrorType.validation);
     }
-  }
-
-  // Centralized error handling
-  void handleError(BuildContext context, String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool _isCurrentStepValid(int step) {
@@ -567,12 +655,10 @@ class _FormScreenState extends State<FormScreen> {
                                   details.onStepContinue?.call();
                                 } else {
                                   if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Please complete this step before continuing.',
-                                      ),
-                                    ),
+                                  handleError(
+                                    context,
+                                    'Please complete this step before continuing.',
+                                    type: ErrorType.validation,
                                   );
                                 }
                               },
