@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
+import 'edit_requisition_screen.dart'; // Add this import
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -40,13 +41,19 @@ class DashboardScreen extends StatelessWidget {
     }
   }
 
-  // void _navigateToEditForm(BuildContext context, String docId, Map<String, dynamic> data) {
-  //   Navigator.pushNamed(
-  //     context,
-  //     '/editForm',
-  //     arguments: {'docId': docId, 'data': data},
-  //   );
-  // }
+  void _navigateToEditForm(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> data,
+  ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            EditRequisitionScreen(docId: docId, formData: data),
+      ),
+    );
+  }
 
   void _confirmDelete(BuildContext context, String docId) {
     showDialog(
@@ -198,11 +205,12 @@ class DashboardScreen extends StatelessWidget {
                                   );
                                 },
                               ),
-                              // IconButton(
-                              //   icon: const Icon(Icons.edit),
-                              //   tooltip: 'Edit',
-                              //   onPressed: () => _navigateToEditForm(context, doc.id, data),
-                              // ),
+                              TextButton.icon(
+                                icon: const Icon(Icons.edit),
+                                label: const Text('Edit'),
+                                onPressed: () =>
+                                    _navigateToEditForm(context, doc.id, data),
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.delete),
                                 tooltip: 'Delete',
