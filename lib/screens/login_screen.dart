@@ -9,22 +9,32 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Color scheme to match dashboard
+  static const Color primaryColor = Color(0xFF5E4BA6);
+  static const Color secondaryColor = Color(0xFFE55986);
+  static const Color backgroundColor = Color(0xFFF2EDFF);
+  static const Color cardColor = Colors.white;
+  static const Color textColor = Color(0xFF333333);
+  static const Color subtitleColor = Color(0xFF666666);
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
-
-  // String? _error; // General error message from Firebase
-
-  // State variables for individual field errors
   String? _emailError;
   String? _passwordError;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _login() async {
     // Reset previous errors
     setState(() {
       _emailError = null;
       _passwordError = null;
-      // _error = null; // Reset general Firebase error
       _loading = true;
     });
 
@@ -49,13 +59,6 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       isValid = false;
     }
-    // You could add password length validation here if desired
-    // else if (_passwordController.text.length < 6) {
-    //   setState(() {
-    //     _passwordError = "Password must be at least 6 characters";
-    //   });
-    //   isValid = false;
-    // }
 
     if (!isValid) {
       setState(() {
@@ -70,29 +73,22 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text.trim(),
       );
       if (mounted) {
-        // Check if the widget is still in the tree
         Navigator.pushReplacementNamed(context, '/home');
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         setState(() {
-          // Handle specific Firebase Auth errors and map them to fields if possible
           if (e.code == 'user-not-found' || e.code == 'invalid-email') {
             _emailError = 'Invalid email or user not found.';
           } else if (e.code == 'wrong-password' ||
               e.code == 'invalid-credential') {
             _passwordError = 'Incorrect password.';
           } else {
-            // Generic error for other Firebase issues
-            // You might want to display this in a more prominent way
-            // like the original _error Text widget you had.
             _emailError = 'Login failed. Check your credentials.';
-            // Log the detailed error
           }
         });
       }
     } catch (e) {
-      // Catch any other unexpected errors
       if (mounted) {
         setState(() {
           _emailError = 'An unexpected error occurred. Please try again.';
@@ -110,108 +106,191 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: backgroundColor,
       body: Center(
         child: SingleChildScrollView(
-          // Added SingleChildScrollView for smaller screens
-          child: Card(
-            margin: const EdgeInsets.all(24),
-            elevation: 8,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              // Wrap with Form widget if using _formKey for validation
-              // child: Form(
-              //   key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    "Sales App Login",
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: "Email",
-                      hintText: "Enter your email",
-                      border: const OutlineInputBorder(),
-                      errorText: _emailError,
-                      // Display email error here
-                      prefixIcon: const Icon(Icons.email),
-                    ),
-                    onChanged: (value) {
-                      // Optionally clear error when user starts typing
-                      if (_emailError != null) {
-                        setState(() {
-                          _emailError = null;
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: "Password",
-                      hintText: "Enter your password",
-                      border: const OutlineInputBorder(),
-                      errorText: _passwordError,
-                      // Display password error here
-                      prefixIcon: const Icon(Icons.lock),
-                    ),
-                    onChanged: (value) {
-                      // Optionally clear error when user starts typing
-                      if (_passwordError != null) {
-                        setState(() {
-                          _passwordError = null;
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  // // This was your original general error display.
-                  // // You can decide if you still want a general error message
-                  // // in addition to field-specific errors.
-                  // if (_error != null && _emailError == null && _passwordError == null)
-                  //   Padding(
-                  //     padding: const EdgeInsets.only(bottom: 8.0),
-                  //     child: Text(
-                  //       _error!,
-                  //       style: const TextStyle(color: Colors.red, fontSize: 14),
-                  //       textAlign: TextAlign.center,
-                  //     ),
-                  //   ),
-                  ElevatedButton.icon(
-                    onPressed: _loading ? null : _login,
-                    icon: _loading
-                        ? Container(
-                            width: 24,
-                            height: 24,
-                            padding: const EdgeInsets.all(2.0),
-                            child: const CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 3,
-                            ),
-                          )
-                        : const Icon(Icons.login),
-                    label: const Text("Login"),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 30,
-                        vertical: 15,
-                      ),
-                      textStyle: const TextStyle(fontSize: 16),
-                    ),
-                  ),
-                ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Logo/Icon Section
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: primaryColor,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.store_rounded,
+                  color: Colors.white,
+                  size: 56,
+                ),
               ),
-              // ),
-            ),
+              const SizedBox(height: 24),
+
+              // App Name/Title
+              const Text(
+                "Sales App",
+                style: TextStyle(
+                  color: primaryColor,
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Log in to manage sales requisitions",
+                style: TextStyle(color: Colors.grey[600], fontSize: 16),
+              ),
+              const SizedBox(height: 40),
+
+              // Login Card
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: 400),
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                child: Card(
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  color: cardColor,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Login",
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Email Field
+                        const Text(
+                          "Email",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          style: const TextStyle(color: textColor),
+                          decoration: InputDecoration(
+                            hintText: "Enter your email",
+                            errorText: _emailError,
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.email_outlined,
+                              color: primaryColor,
+                            ),
+                            errorStyle: const TextStyle(color: secondaryColor),
+                          ),
+                          onChanged: (value) {
+                            if (_emailError != null) {
+                              setState(() {
+                                _emailError = null;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Password Field
+                        const Text(
+                          "Password",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          style: const TextStyle(color: textColor),
+                          decoration: InputDecoration(
+                            hintText: "Enter your password",
+                            errorText: _passwordError,
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.lock_outline,
+                              color: primaryColor,
+                            ),
+                            errorStyle: const TextStyle(color: secondaryColor),
+                          ),
+                          onChanged: (value) {
+                            if (_passwordError != null) {
+                              setState(() {
+                                _passwordError = null;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 30),
+
+                        // Login Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _loading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: secondaryColor,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 3,
+                                    ),
+                                  )
+                                : const Text(
+                                    "LOGIN",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Optional: Version or Copyright info
+              const SizedBox(height: 40),
+              Text(
+                "© 2025 Sales App. All rights reserved.",
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+            ],
           ),
         ),
       ),
