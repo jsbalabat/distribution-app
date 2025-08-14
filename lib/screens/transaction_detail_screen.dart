@@ -240,11 +240,11 @@ class TransactionDetailScreen extends StatelessWidget {
                     final items = data['items'] as List<dynamic>? ?? [];
 
                     // Format the timestamp for better display
-                    final timestamp = data['timeStamp'] as Timestamp?;
-                    final date = timestamp?.toDate();
-                    final formattedDate = date != null
-                        ? DateFormat('MMM d, yyyy').format(date)
-                        : 'Unknown Date';
+                    // final timestamp = data['timeStamp'] as Timestamp?;
+                    // final date = timestamp?.toDate();
+                    // final formattedDate = date != null
+                    //     ? DateFormat('MMM d, yyyy').format(date)
+                    //     : 'Unknown Date';
 
                     for (var item in items) {
                       rows.add(
@@ -280,7 +280,7 @@ class TransactionDetailScreen extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: SingleChildScrollView(
                       child: DataTable(
-                        headingRowColor: MaterialStateProperty.resolveWith(
+                        headingRowColor: WidgetStateProperty.resolveWith(
                           (_) => primaryColor.withValues(
                             alpha: 0.1,
                           ), // Changed from grey to theme color
