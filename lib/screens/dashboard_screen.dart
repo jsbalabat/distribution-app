@@ -227,13 +227,13 @@ class DashboardScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.receipt_long,
                       size: 80,
-                      color: primaryColor.withOpacity(0.7),
+                      color: primaryColor.withValues(alpha: 0.7),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -313,7 +313,7 @@ class DashboardScreen extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: primaryColor.withOpacity(0.1),
+                          color: primaryColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Icon(
@@ -468,8 +468,8 @@ class DashboardScreen extends StatelessWidget {
                                           Container(
                                             padding: const EdgeInsets.all(6),
                                             decoration: BoxDecoration(
-                                              color: primaryColor.withOpacity(
-                                                0.1,
+                                              color: primaryColor.withValues(
+                                                alpha: 0.1,
                                               ),
                                               borderRadius:
                                                   BorderRadius.circular(6),
@@ -524,7 +524,7 @@ class DashboardScreen extends StatelessWidget {
                                   margin: const EdgeInsets.only(top: 10),
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: primaryColor.withOpacity(0.05),
+                                    color: primaryColor.withValues(alpha: 0.05),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Column(
@@ -609,7 +609,7 @@ class DashboardScreen extends StatelessWidget {
                               vertical: 16,
                             ),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 _buildActionButton(
                                   icon: Icons.picture_as_pdf,
@@ -630,6 +630,7 @@ class DashboardScreen extends StatelessWidget {
                                     );
                                   },
                                 ),
+                                const SizedBox(width: 12),
                                 _buildActionButton(
                                   icon: Icons.edit,
                                   label: 'Edit',
@@ -640,6 +641,7 @@ class DashboardScreen extends StatelessWidget {
                                     data,
                                   ),
                                 ),
+                                const SizedBox(width: 12),
                                 _buildActionButton(
                                   icon: Icons.delete,
                                   label: 'Delete',
@@ -700,15 +702,26 @@ class DashboardScreen extends StatelessWidget {
     required Color color,
     required VoidCallback onPressed,
   }) {
-    return Expanded(
+    return SizedBox(
+      width: 90, // Set a fixed width to make buttons smaller
       child: TextButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, color: color, size: 20),
-        label: Text(label, style: TextStyle(color: color)),
+        icon: Icon(icon, color: color, size: 18), // Smaller icon
+        label: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 13, // Smaller text
+          ),
+        ),
         style: TextButton.styleFrom(
           backgroundColor: color.withOpacity(0.1),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            vertical: 6, // Smaller vertical padding
+            horizontal: 4, // Smaller horizontal padding
+          ),
+          minimumSize: const Size(0, 36), // Smaller minimum height
         ),
       ),
     );
