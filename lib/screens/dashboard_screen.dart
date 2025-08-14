@@ -715,7 +715,7 @@ class DashboardScreen extends StatelessWidget {
           ),
         ),
         style: TextButton.styleFrom(
-          backgroundColor: color.withOpacity(0.1),
+          backgroundColor: color.withValues(alpha: 0.1),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(
             vertical: 6, // Smaller vertical padding
