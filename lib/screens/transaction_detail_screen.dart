@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:intl/intl.dart';
 
 // Color scheme matching the dashboard
 const Color primaryColor = Color(0xFF5E4BA6);
@@ -57,6 +57,7 @@ class TransactionDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
@@ -138,6 +139,7 @@ class TransactionDetailScreen extends StatelessWidget {
                       StreamBuilder<QuerySnapshot>(
                         stream: FirebaseFirestore.instance
                             .collection('salesRequisitions')
+                            .where('userID', isEqualTo: uid)
                             .snapshots(),
                         builder: (context, snapshot) {
                           int totalTransactions = snapshot.hasData
@@ -201,6 +203,7 @@ class TransactionDetailScreen extends StatelessWidget {
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('salesRequisitions')
+                    .where('userID', isEqualTo: uid)
                     .orderBy('timeStamp', descending: true)
                     .snapshots(),
                 builder: (context, snapshot) {
