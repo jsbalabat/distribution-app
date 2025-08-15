@@ -44,12 +44,6 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.inventory), label: 'Items'),
         ],
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.pushNamed(context, '/form'),
-        label: const Text('New SOR'),
-        icon: const Icon(Icons.add),
-      ),
     );
   }
 }
