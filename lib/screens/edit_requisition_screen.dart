@@ -22,6 +22,14 @@ class EditRequisitionScreen extends StatefulWidget {
 }
 
 class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
+  // Color scheme to match other screens
+  static const Color primaryColor = Color(0xFF5E4BA6);
+  static const Color secondaryColor = Color(0xFFE55986);
+  static const Color backgroundColor = Color(0xFFF2EDFF);
+  static const Color cardColor = Colors.white;
+  static const Color textColor = Color(0xFF333333);
+  static const Color subtitleColor = Color(0xFF666666);
+
   List<Map<String, dynamic>> _items = [];
   DateTime? _invoiceDate;
   DateTime? _dispatchDate;
@@ -75,7 +83,15 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load available items: $e')),
+          SnackBar(
+            content: Text('Failed to load available items: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            margin: const EdgeInsets.all(10),
+          ),
         );
         setState(() {
           _isLoadingAvailableItems = false;
@@ -120,7 +136,6 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
   // Show item selection dialog
   void _showAddItemDialog() {
-    // Don't create a controller here - create it inside the builder
     List<Item> filteredItems = List.from(_availableItems);
     String searchQuery = '';
 
@@ -130,35 +145,44 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
         return StatefulBuilder(
           builder: (builderContext, setDialogState) {
             return AlertDialog(
-              title: const Text('Add New Item'),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Add New Item',
+                style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+              ),
               content: SizedBox(
                 width: double.maxFinite,
                 height: 400,
                 child: Column(
                   children: [
-                    // Search bar WITHOUT TextEditingController
+                    // Search bar
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
+                      padding: const EdgeInsets.only(bottom: 12.0),
                       child: TextField(
-                        // Don't use initialValue and controller at the same time
-                        // Remove both of these lines:
-                        // controller: null,
-                        // initialValue: null,
-
-                        // Keep the rest of your TextField properties
                         decoration: InputDecoration(
                           hintText: 'Search by name or code',
-                          prefixIcon: const Icon(Icons.search),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: primaryColor,
+                          ),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
-                            vertical: 0,
+                            vertical: 12,
                           ),
+                          filled: true,
+                          fillColor: Colors.grey[100],
                           isDense: true,
                           suffixIcon: searchQuery.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(Icons.clear),
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    color: subtitleColor,
+                                  ),
                                   onPressed: () {
                                     setDialogState(() {
                                       searchQuery = '';
@@ -193,12 +217,35 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                       ),
                     ),
 
-                    // Item list - no changes needed here
+                    // Item list
                     Expanded(
                       child: _isLoadingAvailableItems
-                          ? const Center(child: CircularProgressIndicator())
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: primaryColor,
+                              ),
+                            )
                           : filteredItems.isEmpty
-                          ? const Center(child: Text('No items found'))
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.search_off,
+                                    size: 48,
+                                    color: Colors.grey[400],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No items found',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
                           : ListView.builder(
                               itemCount: filteredItems.length,
                               itemBuilder: (context, index) {
@@ -208,29 +255,91 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                       existingItem['id'] == item.id,
                                 );
 
-                                return ListTile(
-                                  title: Text(item.name),
-                                  subtitle: Text(
-                                    'Code: ${item.code} | Stock: ${item.stock}',
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 4,
                                   ),
-                                  enabled: !isAlreadyAdded && item.stock > 0,
-                                  onTap: isAlreadyAdded || item.stock <= 0
-                                      ? null
-                                      : () {
-                                          Navigator.of(dialogContext).pop();
-                                          _showQuantityInputDialog(item);
-                                        },
-                                  trailing: isAlreadyAdded
-                                      ? const Chip(
-                                          label: Text('Already Added'),
-                                          backgroundColor: Colors.grey,
-                                        )
-                                      : item.stock <= 0
-                                      ? const Chip(
-                                          label: Text('Out of Stock'),
-                                          backgroundColor: Colors.red,
-                                        )
-                                      : null,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  color: isAlreadyAdded || item.stock <= 0
+                                      ? Colors.grey[100]
+                                      : cardColor,
+                                  elevation: 0,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 4,
+                                    ),
+                                    leading: CircleAvatar(
+                                      backgroundColor: primaryColor.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      child: Text(
+                                        item.name.substring(0, 1).toUpperCase(),
+                                        style: const TextStyle(
+                                          color: primaryColor,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    title: Text(
+                                      item.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        color: isAlreadyAdded || item.stock <= 0
+                                            ? Colors.grey[600]
+                                            : textColor,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Code: ${item.code} | Stock: ${item.stock}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isAlreadyAdded || item.stock <= 0
+                                            ? Colors.grey[500]
+                                            : subtitleColor,
+                                      ),
+                                    ),
+                                    enabled: !isAlreadyAdded && item.stock > 0,
+                                    onTap: isAlreadyAdded || item.stock <= 0
+                                        ? null
+                                        : () {
+                                            Navigator.of(dialogContext).pop();
+                                            _showQuantityInputDialog(item);
+                                          },
+                                    trailing: isAlreadyAdded
+                                        ? Chip(
+                                            label: const Text(
+                                              'Added',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            backgroundColor: Colors.grey[600],
+                                            padding: EdgeInsets.zero,
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                          )
+                                        : item.stock <= 0
+                                        ? const Chip(
+                                            label: Text(
+                                              'Out of Stock',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            backgroundColor: Colors.red,
+                                            padding: EdgeInsets.zero,
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                          )
+                                        : null,
+                                  ),
                                 );
                               },
                             ),
@@ -243,16 +352,25 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                   onPressed: () {
                     Navigator.of(dialogContext).pop();
                   },
+                  style: TextButton.styleFrom(foregroundColor: primaryColor),
                   child: const Text('Cancel'),
                 ),
-                TextButton(
+                ElevatedButton.icon(
                   onPressed: _isLoadingAvailableItems
                       ? null
                       : () {
                           Navigator.of(dialogContext).pop();
                           _loadAvailableItems();
                         },
-                  child: const Text('Refresh Items'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Refresh Items'),
                 ),
               ],
             );
@@ -274,7 +392,11 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
       if (itemData == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to get item price')),
+          const SnackBar(
+            content: Text('Failed to get item price'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
         return;
       }
@@ -312,9 +434,16 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error fetching item price: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error fetching item price: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
     }
   }
 
@@ -326,6 +455,20 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
           : _dispatchDate ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              surface: cardColor,
+              onSurface: textColor,
+            ),
+            dialogBackgroundColor: cardColor,
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked != null) {
@@ -369,14 +512,28 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Changes saved successfully')),
+                const SnackBar(
+                  content: Text('Changes saved successfully'),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  ),
+                ),
               );
               Navigator.pop(context); // Return to dashboard
             }
           } catch (e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Error saving changes: $e')),
+                SnackBar(
+                  content: Text('Error saving changes: $e'),
+                  backgroundColor: Colors.red,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  ),
+                ),
               );
             }
           } finally {
@@ -414,26 +571,37 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('yyyy-MM-dd');
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final currencyFormat = NumberFormat.currency(
+      locale: 'en_PH',
+      symbol: '₱',
+      decimalDigits: 2,
+    );
 
     return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text('Edit Requisition'),
+        title: const Text(
+          'Edit Requisition',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: primaryColor,
+        elevation: 0,
         actions: [
           if (_hasChanges)
             IconButton(
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.save, color: Colors.white),
               onPressed: _isLoading ? null : _saveChanges,
               tooltip: 'Save Changes',
             ),
         ],
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: _confirmCancel,
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: primaryColor))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -441,24 +609,103 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                 children: [
                   // Customer information (readonly)
                   Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     margin: const EdgeInsets.only(bottom: 16),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            widget.formData['customerName'] ??
-                                'Unknown Customer',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.person,
+                                  color: primaryColor,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.formData['customerName'] ??
+                                          'Unknown Customer',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: textColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'SOR #: ${widget.formData['sorNumber'] ?? ''}',
+                                      style: const TextStyle(
+                                        color: subtitleColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          Text('SOR #: ${widget.formData['sorNumber'] ?? ''}'),
-                          Text(
-                            'Account #: ${widget.formData['accountNumber'] ?? ''}',
+                          const Divider(height: 24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Account Number',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: subtitleColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      widget.formData['accountNumber'] ?? 'N/A',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Area',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: subtitleColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      widget.formData['area'] ?? 'N/A',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -467,49 +714,127 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
                   // Dates (editable)
                   Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     margin: const EdgeInsets.only(bottom: 16),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Dates',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.calendar_today,
+                                  color: primaryColor,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Text(
+                                'Dates',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: textColor,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 16),
 
                           // Invoice Date
-                          Row(
-                            children: [
-                              const Text('Invoice Date: '),
-                              TextButton(
-                                onPressed: () => _selectDate(context, true),
-                                child: Text(
-                                  _invoiceDate != null
-                                      ? dateFormat.format(_invoiceDate!)
-                                      : 'Select Date',
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Invoice Date',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                TextButton.icon(
+                                  onPressed: () => _selectDate(context, true),
+                                  icon: const Icon(
+                                    Icons.edit_calendar,
+                                    size: 16,
+                                    color: primaryColor,
+                                  ),
+                                  label: Text(
+                                    _invoiceDate != null
+                                        ? dateFormat.format(_invoiceDate!)
+                                        : 'Select Date',
+                                    style: const TextStyle(color: primaryColor),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: primaryColor.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
 
                           // Dispatch Date
-                          Row(
-                            children: [
-                              const Text('Dispatch Date: '),
-                              TextButton(
-                                onPressed: () => _selectDate(context, false),
-                                child: Text(
-                                  _dispatchDate != null
-                                      ? dateFormat.format(_dispatchDate!)
-                                      : 'Select Date',
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Dispatch Date',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                                TextButton.icon(
+                                  onPressed: () => _selectDate(context, false),
+                                  icon: const Icon(
+                                    Icons.edit_calendar,
+                                    size: 16,
+                                    color: primaryColor,
+                                  ),
+                                  label: Text(
+                                    _dispatchDate != null
+                                        ? dateFormat.format(_dispatchDate!)
+                                        : 'Select Date',
+                                    style: const TextStyle(color: primaryColor),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: primaryColor.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -518,6 +843,10 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
                   // Items (editable)
                   Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     margin: const EdgeInsets.only(bottom: 16),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -525,19 +854,45 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Items',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.shopping_cart,
+                                  color: primaryColor,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Items',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: textColor,
+                                  ),
                                 ),
                               ),
                               ElevatedButton.icon(
                                 onPressed: _showAddItemDialog,
-                                icon: const Icon(Icons.add),
+                                icon: const Icon(Icons.add, size: 16),
                                 label: const Text('Add Item'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: secondaryColor,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -545,60 +900,208 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
                           // Item list
                           _items.isEmpty
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(16.0),
-                                    child: Text(
-                                      'No items in this order. Add items using the button above.',
+                              ? Container(
+                                  padding: const EdgeInsets.all(24),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.shopping_basket,
+                                          size: 48,
+                                          color: Colors.grey[400],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        const Text(
+                                          'No items in this order',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: subtitleColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Add items using the button above',
+                                          style: TextStyle(
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 )
-                              : ListView.builder(
+                              : ListView.separated(
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: _items.length,
+                                  separatorBuilder: (context, index) =>
+                                      const Divider(height: 1),
                                   itemBuilder: (context, index) {
                                     final item = _items[index];
-                                    return ListTile(
-                                      title: Text(
-                                        item['name'] ?? 'Unknown Item',
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: index.isOdd
+                                            ? Colors.grey[50]
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      subtitle: Text(
-                                        'Qty: ${item['quantity']} @ ₱${item['unitPrice']?.toStringAsFixed(2) ?? '0.00'} = ₱${item['subtotal']?.toStringAsFixed(2) ?? '0.00'}',
-                                      ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.edit),
-                                            onPressed: () =>
-                                                _editItemQuantity(index),
-                                            tooltip: 'Edit Quantity',
+                                      child: ListTile(
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 4,
+                                            ),
+                                        leading: CircleAvatar(
+                                          backgroundColor: primaryColor
+                                              .withValues(alpha: 0.1),
+                                          child: Text(
+                                            '${item['quantity']}',
+                                            style: const TextStyle(
+                                              color: primaryColor,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete),
-                                            onPressed: () => _removeItem(index),
-                                            tooltip: 'Remove Item',
+                                        ),
+                                        title: Text(
+                                          item['name'] ?? 'Unknown Item',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
                                           ),
-                                        ],
+                                        ),
+                                        subtitle: Wrap(
+                                          crossAxisAlignment:
+                                              WrapCrossAlignment.center,
+                                          children: [
+                                            Text(
+                                              currencyFormat.format(
+                                                item['unitPrice'],
+                                              ),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                            const Text(
+                                              ' × ',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: subtitleColor,
+                                              ),
+                                            ),
+                                            Text(
+                                              '${item['quantity']}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                            const Text(
+                                              ' = ',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: subtitleColor,
+                                              ),
+                                            ),
+                                            Text(
+                                              currencyFormat.format(
+                                                item['subtotal'],
+                                              ),
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: primaryColor,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                color: primaryColor,
+                                                size: 20,
+                                              ),
+                                              onPressed: () =>
+                                                  _editItemQuantity(index),
+                                              tooltip: 'Edit Quantity',
+                                              style: IconButton.styleFrom(
+                                                backgroundColor: primaryColor
+                                                    .withValues(alpha: 0.1),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.delete,
+                                                color: secondaryColor,
+                                                size: 20,
+                                              ),
+                                              onPressed: () =>
+                                                  _removeItem(index),
+                                              tooltip: 'Remove Item',
+                                              style: IconButton.styleFrom(
+                                                backgroundColor: secondaryColor
+                                                    .withValues(alpha: 0.1),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     );
                                   },
                                 ),
 
-                          const Divider(),
+                          if (_items.isNotEmpty) ...[
+                            const Divider(height: 32),
 
-                          // Total
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Text(
-                              'Total Amount: ₱${_calculateTotal().toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                            // Total
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Total Amount:',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text(
+                                    currencyFormat.format(_calculateTotal()),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -606,33 +1109,66 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                 ],
               ),
             ),
-      bottomNavigationBar: BottomAppBar(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isLoading ? null : _confirmCancel,
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('Cancel'),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 5,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _confirmCancel,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: secondaryColor,
+                      side: const BorderSide(color: secondaryColor),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Cancel'),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _isLoading || !_hasChanges ? null : _saveChanges,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Submit Changes'),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isLoading || !_hasChanges ? null : _saveChanges,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      disabledBackgroundColor: Colors.grey[300],
+                    ),
+                    icon: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(_isLoading ? 'Saving...' : 'Save Changes'),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
