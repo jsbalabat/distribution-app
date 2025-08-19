@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../styles/app_styles.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -9,14 +10,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Color scheme to match dashboard
-  static const Color primaryColor = Color(0xFF5E4BA6);
-  static const Color secondaryColor = Color(0xFFE55986);
-  static const Color backgroundColor = Color(0xFFF2EDFF);
-  static const Color cardColor = Colors.white;
-  static const Color textColor = Color(0xFF333333);
-  static const Color subtitleColor = Color(0xFF666666);
-
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
@@ -106,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppStyles.backgroundColor,
       body: Center(
         child: SingleChildScrollView(
           child: Column(
@@ -117,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  color: primaryColor,
+                  color: AppStyles.primaryColor,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -132,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text(
                 "Sales App",
                 style: TextStyle(
-                  color: primaryColor,
+                  color: AppStyles.primaryColor,
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                 ),
@@ -154,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  color: cardColor,
+                  color: AppStyles.cardColor,
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(
@@ -165,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: textColor,
+                            color: AppStyles.textColor,
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -175,14 +168,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           "Email",
                           style: TextStyle(
                             fontWeight: FontWeight.w500,
-                            color: textColor,
+                            color: AppStyles.textColor,
                           ),
                         ),
                         const SizedBox(height: 8),
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          style: const TextStyle(color: textColor),
+                          style: const TextStyle(color: AppStyles.textColor),
                           decoration: InputDecoration(
                             hintText: "Enter your email",
                             errorText: _emailError,
@@ -194,9 +187,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             prefixIcon: const Icon(
                               Icons.email_outlined,
-                              color: primaryColor,
+                              color: AppStyles.primaryColor,
                             ),
-                            errorStyle: const TextStyle(color: secondaryColor),
+                            errorStyle: const TextStyle(
+                              color: AppStyles.secondaryColor,
+                            ),
                           ),
                           onChanged: (value) {
                             if (_emailError != null) {
@@ -213,14 +208,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           "Password",
                           style: TextStyle(
                             fontWeight: FontWeight.w500,
-                            color: textColor,
+                            color: AppStyles.textColor,
                           ),
                         ),
                         const SizedBox(height: 8),
                         TextFormField(
                           controller: _passwordController,
                           obscureText: true,
-                          style: const TextStyle(color: textColor),
+                          style: const TextStyle(color: AppStyles.textColor),
                           decoration: InputDecoration(
                             hintText: "Enter your password",
                             errorText: _passwordError,
@@ -232,9 +227,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             prefixIcon: const Icon(
                               Icons.lock_outline,
-                              color: primaryColor,
+                              color: AppStyles.primaryColor,
                             ),
-                            errorStyle: const TextStyle(color: secondaryColor),
+                            errorStyle: const TextStyle(
+                              color: AppStyles.secondaryColor,
+                            ),
                           ),
                           onChanged: (value) {
                             if (_passwordError != null) {
@@ -253,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: ElevatedButton(
                             onPressed: _loading ? null : _login,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: secondaryColor,
+                              backgroundColor: AppStyles.secondaryColor,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
