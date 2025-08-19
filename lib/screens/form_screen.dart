@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:math';
 import '../services/firestore_service.dart';
 import '../models/item_model.dart';
 import '../widgets/customer_section.dart';
@@ -12,6 +13,7 @@ import '../widgets/customer_search_dialog.dart';
 import '../widgets/edit_quantity_dialog.dart';
 import '../widgets/confirmation_dialog.dart';
 import '../utils/error_types.dart';
+import '../styles/app_styles.dart';
 
 class FormStepData {
   final String title;
@@ -63,6 +65,8 @@ class _FormScreenState extends State<FormScreen> {
   Map<String, String> _customerIdMap = {};
   List<Map<String, dynamic>> _customers = [];
   final List<bool> _stepValid = [false, false, false]; // track validation
+
+  bool _isSubmitting = false; // Track form submission state
 
   void _loadCustomers() async {
     final snapshot = await FirebaseFirestore.instance
@@ -120,8 +124,13 @@ class _FormScreenState extends State<FormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(displayMessage),
+          backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          margin: const EdgeInsets.all(10),
         ),
       );
     }
@@ -160,6 +169,11 @@ class _FormScreenState extends State<FormScreen> {
     super.initState();
     _loadCustomers();
     _loadItems(); // Add item loading in initState
+
+    // Set default dates
+    _requestDate = DateTime.now();
+    _dispatchDate = DateTime.now().add(const Duration(days: 3));
+    _invoiceDate = DateTime.now();
   }
 
   @override
@@ -208,23 +222,42 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   Future<String> generateSORNumber(String accountNumber) async {
-    final now = DateTime.now();
-    final dateStr = DateFormat('yyMMdd').format(now); // '250620'
+    try {
+      final now = DateTime.now();
+      final dateStr = DateFormat('yyMMdd').format(now); // '250819'
+      final prefix = 'HDI1-$dateStr';
 
-    // Build prefix: PAC001-250620-
-    final prefix = 'HDI1-$dateStr';
+      // Try a different approach to avoid permission issues
+      try {
+        // Instead of querying with filters, get today's submissions and filter client-side
+        final snapshot = await FirebaseFirestore.instance
+            .collection('salesRequisitions')
+            .where('userID', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+            .get();
 
-    // Query Firestore for count of existing SORs with that prefix
-    final snapshot = await FirebaseFirestore.instance
-        .collection('salesRequisitions')
-        .where('sorNumber', isGreaterThanOrEqualTo: '$prefix-000')
-        .where('sorNumber', isLessThanOrEqualTo: '$prefix-999')
-        .get();
+        // Filter matching SORs client-side
+        final todayDocs = snapshot.docs.where((doc) {
+          final sorNumber = (doc.data()['sorNumber'] ?? '') as String;
+          return sorNumber.startsWith(prefix);
+        }).toList();
 
-    final count = snapshot.docs.length + 1;
-    final paddedCount = count.toString().padLeft(3, '0');
+        final count = todayDocs.isEmpty ? 1 : todayDocs.length + 1;
+        final paddedCount = count.toString().padLeft(3, '0');
+        final sorNumber = '$prefix-$paddedCount';
 
-    return '$prefix-$paddedCount';
+        return sorNumber;
+      } catch (e) {
+        // Second fallback - use timestamp seconds as unique identifier
+        final timestamp = DateTime.now().second;
+        final paddedTimestamp = timestamp.toString().padLeft(3, '0');
+        return '$prefix-$paddedTimestamp';
+      }
+    } catch (e) {
+      // Final fallback value in case of any error
+      final timestamp = DateTime.now().millisecondsSinceEpoch % 1000;
+      final fallbackSOR = 'HDI1-ERR-${timestamp.toString().padLeft(3, '0')}';
+      return fallbackSOR;
+    }
   }
 
   Future<void> fetchAccountReceivable(String accountNumber) async {
@@ -437,6 +470,10 @@ class _FormScreenState extends State<FormScreen> {
 
   Future<void> _submitForm() async {
     try {
+      setState(() {
+        _isSubmitting = true;
+      });
+
       await _validateForm();
 
       final now = Timestamp.now();
@@ -481,6 +518,9 @@ class _FormScreenState extends State<FormScreen> {
           'Failed to submit form: $e',
           type: ErrorType.network,
         );
+        setState(() {
+          _isSubmitting = false;
+        });
         return;
       }
 
@@ -496,6 +536,10 @@ class _FormScreenState extends State<FormScreen> {
         // We don't return here because the form was submitted successfully
       }
 
+      setState(() {
+        _isSubmitting = false;
+      });
+
       safeSetState(() {
         // Reset form
         _selectedCustomer = null;
@@ -510,7 +554,15 @@ class _FormScreenState extends State<FormScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Form submitted successfully!')),
+        const SnackBar(
+          content: Text('Form submitted successfully!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+          ),
+          margin: EdgeInsets.all(10),
+        ),
       );
 
       if (!mounted) return;
@@ -518,19 +570,43 @@ class _FormScreenState extends State<FormScreen> {
     } catch (e) {
       if (!mounted) return;
       handleError(context, e.toString(), type: ErrorType.validation);
+      setState(() {
+        _isSubmitting = false;
+      });
     }
   }
 
   bool _isCurrentStepValid(int step) {
-    if (step == 0 && _selectedCustomer != null) {
-      return true;
-    } else if (step == 0 && _selectedCustomer == null) {
-      return false;
+    if (step == 0) {
+      if (_selectedCustomer != null) {
+        _stepValid[0] = true;
+        return true;
+      } else {
+        _stepValid[0] = false;
+        return false;
+      }
+    } else if (step == 1) {
+      if (_selectedItems.isNotEmpty) {
+        _stepValid[1] = true;
+        return true;
+      } else {
+        _stepValid[1] = false;
+        return false;
+      }
     }
     return true;
   }
 
   void _handleStepContinue() async {
+    if (!_isCurrentStepValid(_currentStep)) {
+      handleError(
+        context,
+        'Please complete this step before continuing.',
+        type: ErrorType.validation,
+      );
+      return;
+    }
+
     final isGoingToFinalStep = _currentStep + 1 == _buildSteps().length - 1;
     if (isGoingToFinalStep) {
       final total = _calculateTotal();
@@ -542,13 +618,243 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
+  Future<void> _selectDate(BuildContext context, int dateType) async {
+    DateTime? initialDate;
+    String title;
+
+    if (dateType == 1) {
+      // Request Date
+      initialDate = _requestDate ?? DateTime.now();
+      title = "Select Request Date";
+    } else if (dateType == 2) {
+      // Dispatch Date
+      initialDate =
+          _dispatchDate ?? DateTime.now().add(const Duration(days: 3));
+      title = "Select Dispatch Date";
+    } else {
+      // Invoice Date
+      initialDate = _invoiceDate ?? DateTime.now();
+      title = "Select Invoice Date";
+    }
+
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2025),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppStyles.primaryColor,
+              onPrimary: Colors.white,
+              surface: AppStyles.cardColor,
+              onSurface: AppStyles.textColor,
+            ),
+            dialogBackgroundColor: AppStyles.cardColor,
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        if (dateType == 1) {
+          _requestDate = picked;
+        } else if (dateType == 2) {
+          _dispatchDate = picked;
+        } else {
+          _invoiceDate = picked;
+        }
+      });
+    }
+  }
+
   List<Step> _buildSteps() {
+    final dateFormat = DateFormat('MMM d, yyyy');
     final List<FormStepData> steps = [
       FormStepData(
         title: 'Customer',
-        content: CustomerSection(
-          selectedCustomer: _selectedCustomer,
-          onTap: _showCustomerSearchDialog,
+        content: Column(
+          children: [
+            CustomerSection(
+              selectedCustomer: _selectedCustomer,
+              onTap: _showCustomerSearchDialog,
+            ),
+            if (_selectedCustomer != null) ...[
+              const SizedBox(height: 24),
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppStyles.primaryColor.withValues(
+                                alpha: 0.1,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.calendar_today,
+                              color: AppStyles.primaryColor,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Dates',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppStyles.textColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Request Date
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Request Date',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _selectDate(context, 1),
+                              icon: const Icon(
+                                Icons.edit_calendar,
+                                size: 16,
+                                color: AppStyles.primaryColor,
+                              ),
+                              label: Text(
+                                _requestDate != null
+                                    ? dateFormat.format(_requestDate!)
+                                    : 'Select Date',
+                                style: const TextStyle(
+                                  color: AppStyles.primaryColor,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppStyles.primaryColor
+                                    .withValues(alpha: 0.1),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Dispatch Date
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Dispatch Date',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _selectDate(context, 2),
+                              icon: const Icon(
+                                Icons.edit_calendar,
+                                size: 16,
+                                color: AppStyles.primaryColor,
+                              ),
+                              label: Text(
+                                _dispatchDate != null
+                                    ? dateFormat.format(_dispatchDate!)
+                                    : 'Select Date',
+                                style: const TextStyle(
+                                  color: AppStyles.primaryColor,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppStyles.primaryColor
+                                    .withValues(alpha: 0.1),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Invoice Date
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Invoice Date',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _selectDate(context, 3),
+                              icon: const Icon(
+                                Icons.edit_calendar,
+                                size: 16,
+                                color: AppStyles.primaryColor,
+                              ),
+                              label: Text(
+                                _invoiceDate != null
+                                    ? dateFormat.format(_invoiceDate!)
+                                    : 'Select Date',
+                                style: const TextStyle(
+                                  color: AppStyles.primaryColor,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppStyles.primaryColor
+                                    .withValues(alpha: 0.1),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
       FormStepData(
@@ -566,10 +872,16 @@ class _FormScreenState extends State<FormScreen> {
               _showQuantityInput(item);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
+                SnackBar(
+                  content: const Text(
                     'This item is out of stock and cannot be selected.',
                   ),
+                  backgroundColor: Colors.red,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  margin: const EdgeInsets.all(10),
                 ),
               );
             }
@@ -587,7 +899,7 @@ class _FormScreenState extends State<FormScreen> {
         ),
       ),
       FormStepData(
-        title: 'Review & Submit',
+        title: 'Review',
         content: ReviewSection(
           totalAmount: _calculateTotal(),
           sorNumber: _sorNumber,
@@ -602,9 +914,32 @@ class _FormScreenState extends State<FormScreen> {
       final index = entry.key;
       final step = entry.value;
 
+      // Determine icon
+      IconData stepIcon;
+      if (index == 0) {
+        stepIcon = Icons.person;
+      } else if (index == 1) {
+        stepIcon = Icons.shopping_cart;
+      } else {
+        stepIcon = Icons.assignment;
+      }
+
       return Step(
-        title: Text(step.title), // No type casting needed
-        content: step.content, // No type casting needed
+        title: Text(
+          step.title,
+          style: TextStyle(
+            color: _currentStep == index
+                ? AppStyles.primaryColor
+                : AppStyles.textColor,
+            fontWeight: _currentStep == index
+                ? FontWeight.bold
+                : FontWeight.normal,
+          ),
+        ),
+        content: Container(
+          margin: const EdgeInsets.only(top: 8, bottom: 24),
+          child: step.content,
+        ),
         state: _stepValid[index]
             ? StepState.complete
             : (_currentStep == index ? StepState.editing : StepState.indexed),
@@ -616,65 +951,192 @@ class _FormScreenState extends State<FormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sales Requisition Form')),
+      backgroundColor: AppStyles.backgroundColor,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: AppStyles.primaryColor,
+        title: const Row(
+          children: [
+            Icon(Icons.assignment, color: Colors.white),
+            SizedBox(width: 8),
+            Text(
+              'New Sales Requisition',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        automaticallyImplyLeading: false,
+      ),
       body: SafeArea(
         child: Column(
           children: [
+            // Progress indicator
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppStyles.primaryColor.withValues(alpha: 0.05),
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppStyles.primaryColor.withValues(alpha: 0.1),
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    'Step ${_currentStep + 1} of 3',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppStyles.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: (_currentStep + 1) / 3,
+                      backgroundColor: Colors.grey[200],
+                      color: AppStyles.primaryColor,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             Expanded(
               child: Form(
                 key: _formKey,
-                child: Stepper(
-                  type: StepperType.horizontal,
-                  steps: _buildSteps(),
-                  currentStep: _currentStep,
-                  onStepContinue: _handleStepContinue,
-                  onStepCancel: () {
-                    if (_currentStep > 0) {
-                      setState(() => _currentStep -= 1);
-                    } else {
-                      Navigator.pop(context);
-                    }
-                  },
-                  controlsBuilder: (context, details) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 20.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          if (_currentStep > 0)
-                            OutlinedButton(
-                              onPressed: details.onStepCancel,
-                              child: const Text('Back'),
-                            ),
-                          const SizedBox(width: 10),
-                          if (_currentStep < _buildSteps().length - 1)
-                            OutlinedButton(
-                              onPressed: () {
-                                if (_isCurrentStepValid(_currentStep)) {
-                                  details.onStepContinue?.call();
-                                } else {
-                                  if (!mounted) return;
-                                  handleError(
-                                    context,
-                                    'Please complete this step before continuing.',
-                                    type: ErrorType.validation,
-                                  );
-                                }
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: const ColorScheme.light(
+                      primary: AppStyles.primaryColor,
+                    ),
+                  ),
+                  child: Stepper(
+                    type: StepperType.horizontal,
+                    steps: _buildSteps(),
+                    currentStep: _currentStep,
+                    onStepContinue: _handleStepContinue,
+                    onStepCancel: () {
+                      if (_currentStep > 0) {
+                        setState(() => _currentStep -= 1);
+                      } else {
+                        // Show confirmation before leaving
+                        if (_selectedCustomer != null ||
+                            _selectedItems.isNotEmpty) {
+                          showDialog(
+                            context: context,
+                            builder: (context) => ConfirmationDialog(
+                              title: 'Discard Changes',
+                              message:
+                                  'Are you sure you want to discard this form?',
+                              onConfirm: () {
+                                Navigator.of(context).pop();
                               },
-                              child: const Text('Next'),
-                            )
-                          else if (_currentStep == _buildSteps().length - 1)
-                            OutlinedButton(
-                              onPressed: () {
-                                if (!mounted) return;
-                                _confirmAndSubmit();
-                              },
-                              child: const Text('Submit'),
                             ),
-                        ],
-                      ),
-                    );
-                  },
+                          );
+                        } else {
+                          Navigator.pop(context);
+                        }
+                      }
+                    },
+                    controlsBuilder: (context, details) {
+                      return Container(
+                        margin: const EdgeInsets.only(top: 24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 5,
+                              offset: const Offset(0, -2),
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : details.onStepCancel,
+                                icon: const Icon(Icons.arrow_back),
+                                label: Text(
+                                  _currentStep == 0 ? 'Cancel' : 'Back',
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppStyles.secondaryColor,
+                                  side: const BorderSide(
+                                    color: AppStyles.secondaryColor,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : () {
+                                        if (_currentStep <
+                                            _buildSteps().length - 1) {
+                                          details.onStepContinue?.call();
+                                        } else {
+                                          _confirmAndSubmit();
+                                        }
+                                      },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppStyles.primaryColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Icon(
+                                        _currentStep == _buildSteps().length - 1
+                                            ? Icons.check
+                                            : Icons.arrow_forward,
+                                      ),
+                                label: Text(
+                                  _isSubmitting
+                                      ? 'Processing...'
+                                      : (_currentStep ==
+                                                _buildSteps().length - 1
+                                            ? 'Submit'
+                                            : 'Continue'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
