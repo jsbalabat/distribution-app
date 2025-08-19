@@ -6,6 +6,7 @@ import '../widgets/confirmation_dialog.dart';
 import '../models/item_model.dart';
 import '../services/firestore_service.dart';
 import '../widgets/quantity_input_dialog.dart';
+import '../styles/app_styles.dart';
 
 class EditRequisitionScreen extends StatefulWidget {
   final String docId;
@@ -23,12 +24,6 @@ class EditRequisitionScreen extends StatefulWidget {
 
 class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
   // Color scheme to match other screens
-  static const Color primaryColor = Color(0xFF5E4BA6);
-  static const Color secondaryColor = Color(0xFFE55986);
-  static const Color backgroundColor = Color(0xFFF2EDFF);
-  static const Color cardColor = Colors.white;
-  static const Color textColor = Color(0xFF333333);
-  static const Color subtitleColor = Color(0xFF666666);
 
   List<Map<String, dynamic>> _items = [];
   DateTime? _invoiceDate;
@@ -150,7 +145,10 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
               ),
               title: const Text(
                 'Add New Item',
-                style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppStyles.textColor,
+                ),
               ),
               content: SizedBox(
                 width: double.maxFinite,
@@ -165,7 +163,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                           hintText: 'Search by name or code',
                           prefixIcon: const Icon(
                             Icons.search,
-                            color: primaryColor,
+                            color: AppStyles.primaryColor,
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -181,7 +179,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                               ? IconButton(
                                   icon: const Icon(
                                     Icons.clear,
-                                    color: subtitleColor,
+                                    color: AppStyles.subtitleColor,
                                   ),
                                   onPressed: () {
                                     setDialogState(() {
@@ -222,7 +220,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                       child: _isLoadingAvailableItems
                           ? const Center(
                               child: CircularProgressIndicator(
-                                color: primaryColor,
+                                color: AppStyles.primaryColor,
                               ),
                             )
                           : filteredItems.isEmpty
@@ -264,7 +262,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                   ),
                                   color: isAlreadyAdded || item.stock <= 0
                                       ? Colors.grey[100]
-                                      : cardColor,
+                                      : AppStyles.cardColor,
                                   elevation: 0,
                                   child: ListTile(
                                     contentPadding: const EdgeInsets.symmetric(
@@ -272,13 +270,12 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                       vertical: 4,
                                     ),
                                     leading: CircleAvatar(
-                                      backgroundColor: primaryColor.withValues(
-                                        alpha: 0.1,
-                                      ),
+                                      backgroundColor: AppStyles.primaryColor
+                                          .withValues(alpha: 0.1),
                                       child: Text(
                                         item.name.substring(0, 1).toUpperCase(),
                                         style: const TextStyle(
-                                          color: primaryColor,
+                                          color: AppStyles.primaryColor,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
@@ -289,7 +286,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                         fontWeight: FontWeight.w500,
                                         color: isAlreadyAdded || item.stock <= 0
                                             ? Colors.grey[600]
-                                            : textColor,
+                                            : AppStyles.textColor,
                                       ),
                                     ),
                                     subtitle: Text(
@@ -298,7 +295,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                         fontSize: 12,
                                         color: isAlreadyAdded || item.stock <= 0
                                             ? Colors.grey[500]
-                                            : subtitleColor,
+                                            : AppStyles.subtitleColor,
                                       ),
                                     ),
                                     enabled: !isAlreadyAdded && item.stock > 0,
@@ -352,7 +349,9 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                   onPressed: () {
                     Navigator.of(dialogContext).pop();
                   },
-                  style: TextButton.styleFrom(foregroundColor: primaryColor),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppStyles.primaryColor,
+                  ),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton.icon(
@@ -363,7 +362,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                           _loadAvailableItems();
                         },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
+                    backgroundColor: AppStyles.primaryColor,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -459,12 +458,12 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: primaryColor,
+              primary: AppStyles.primaryColor,
               onPrimary: Colors.white,
-              surface: cardColor,
-              onSurface: textColor,
+              surface: AppStyles.cardColor,
+              onSurface: AppStyles.textColor,
             ),
-            dialogBackgroundColor: cardColor,
+            dialogBackgroundColor: AppStyles.cardColor,
           ),
           child: child!,
         );
@@ -579,13 +578,13 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
     );
 
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppStyles.backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Edit Requisition',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: primaryColor,
+        backgroundColor: AppStyles.primaryColor,
         elevation: 0,
         actions: [
           if (_hasChanges)
@@ -601,7 +600,9 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: primaryColor))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppStyles.primaryColor),
+            )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -624,12 +625,14 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: primaryColor.withValues(alpha: 0.1),
+                                  color: AppStyles.primaryColor.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
                                   Icons.person,
-                                  color: primaryColor,
+                                  color: AppStyles.primaryColor,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -643,14 +646,14 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                       style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: textColor,
+                                        color: AppStyles.textColor,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       'SOR #: ${widget.formData['sorNumber'] ?? ''}',
                                       style: const TextStyle(
-                                        color: subtitleColor,
+                                        color: AppStyles.subtitleColor,
                                       ),
                                     ),
                                   ],
@@ -669,7 +672,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                       'Account Number',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: subtitleColor,
+                                        color: AppStyles.subtitleColor,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -691,7 +694,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                       'Area',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: subtitleColor,
+                                        color: AppStyles.subtitleColor,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -729,12 +732,14 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: primaryColor.withValues(alpha: 0.1),
+                                  color: AppStyles.primaryColor.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
                                   Icons.calendar_today,
-                                  color: primaryColor,
+                                  color: AppStyles.primaryColor,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -743,7 +748,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: textColor,
+                                  color: AppStyles.textColor,
                                 ),
                               ),
                             ],
@@ -773,18 +778,19 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                   icon: const Icon(
                                     Icons.edit_calendar,
                                     size: 16,
-                                    color: primaryColor,
+                                    color: AppStyles.primaryColor,
                                   ),
                                   label: Text(
                                     _invoiceDate != null
                                         ? dateFormat.format(_invoiceDate!)
                                         : 'Select Date',
-                                    style: const TextStyle(color: primaryColor),
+                                    style: const TextStyle(
+                                      color: AppStyles.primaryColor,
+                                    ),
                                   ),
                                   style: TextButton.styleFrom(
-                                    backgroundColor: primaryColor.withValues(
-                                      alpha: 0.1,
-                                    ),
+                                    backgroundColor: AppStyles.primaryColor
+                                        .withValues(alpha: 0.1),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8),
                                     ),
@@ -816,18 +822,19 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                   icon: const Icon(
                                     Icons.edit_calendar,
                                     size: 16,
-                                    color: primaryColor,
+                                    color: AppStyles.primaryColor,
                                   ),
                                   label: Text(
                                     _dispatchDate != null
                                         ? dateFormat.format(_dispatchDate!)
                                         : 'Select Date',
-                                    style: const TextStyle(color: primaryColor),
+                                    style: const TextStyle(
+                                      color: AppStyles.primaryColor,
+                                    ),
                                   ),
                                   style: TextButton.styleFrom(
-                                    backgroundColor: primaryColor.withValues(
-                                      alpha: 0.1,
-                                    ),
+                                    backgroundColor: AppStyles.primaryColor
+                                        .withValues(alpha: 0.1),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8),
                                     ),
@@ -858,12 +865,14 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: primaryColor.withValues(alpha: 0.1),
+                                  color: AppStyles.primaryColor.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
                                   Icons.shopping_cart,
-                                  color: primaryColor,
+                                  color: AppStyles.primaryColor,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -873,7 +882,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: textColor,
+                                    color: AppStyles.textColor,
                                   ),
                                 ),
                               ),
@@ -882,7 +891,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                 icon: const Icon(Icons.add, size: 16),
                                 label: const Text('Add Item'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: secondaryColor,
+                                  backgroundColor: AppStyles.secondaryColor,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(
@@ -924,7 +933,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: subtitleColor,
+                                            color: AppStyles.subtitleColor,
                                           ),
                                         ),
                                         const SizedBox(height: 8),
@@ -960,12 +969,13 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                               vertical: 4,
                                             ),
                                         leading: CircleAvatar(
-                                          backgroundColor: primaryColor
+                                          backgroundColor: AppStyles
+                                              .primaryColor
                                               .withValues(alpha: 0.1),
                                           child: Text(
                                             '${item['quantity']}',
                                             style: const TextStyle(
-                                              color: primaryColor,
+                                              color: AppStyles.primaryColor,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -993,7 +1003,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                               ' × ',
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: subtitleColor,
+                                                color: AppStyles.subtitleColor,
                                               ),
                                             ),
                                             Text(
@@ -1007,7 +1017,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                               ' = ',
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: subtitleColor,
+                                                color: AppStyles.subtitleColor,
                                               ),
                                             ),
                                             Text(
@@ -1017,7 +1027,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.bold,
-                                                color: primaryColor,
+                                                color: AppStyles.primaryColor,
                                               ),
                                             ),
                                           ],
@@ -1028,14 +1038,15 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                             IconButton(
                                               icon: const Icon(
                                                 Icons.edit,
-                                                color: primaryColor,
+                                                color: AppStyles.primaryColor,
                                                 size: 20,
                                               ),
                                               onPressed: () =>
                                                   _editItemQuantity(index),
                                               tooltip: 'Edit Quantity',
                                               style: IconButton.styleFrom(
-                                                backgroundColor: primaryColor
+                                                backgroundColor: AppStyles
+                                                    .primaryColor
                                                     .withValues(alpha: 0.1),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius:
@@ -1047,14 +1058,15 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                             IconButton(
                                               icon: const Icon(
                                                 Icons.delete,
-                                                color: secondaryColor,
+                                                color: AppStyles.secondaryColor,
                                                 size: 20,
                                               ),
                                               onPressed: () =>
                                                   _removeItem(index),
                                               tooltip: 'Remove Item',
                                               style: IconButton.styleFrom(
-                                                backgroundColor: secondaryColor
+                                                backgroundColor: AppStyles
+                                                    .secondaryColor
                                                     .withValues(alpha: 0.1),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius:
@@ -1076,7 +1088,9 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: primaryColor.withValues(alpha: 0.05),
+                                color: AppStyles.primaryColor.withValues(
+                                  alpha: 0.05,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Row(
@@ -1095,7 +1109,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 18,
-                                      color: primaryColor,
+                                      color: AppStyles.primaryColor,
                                     ),
                                   ),
                                 ],
@@ -1130,8 +1144,8 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _isLoading ? null : _confirmCancel,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: secondaryColor,
-                      side: const BorderSide(color: secondaryColor),
+                      foregroundColor: AppStyles.secondaryColor,
+                      side: const BorderSide(color: AppStyles.secondaryColor),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -1146,7 +1160,7 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _isLoading || !_hasChanges ? null : _saveChanges,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
+                      backgroundColor: AppStyles.primaryColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
