@@ -11,14 +11,26 @@ class ConfirmationScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.check_circle_outline, size: 80, color: Colors.green),
+            const Icon(
+              Icons.check_circle_outline,
+              size: 80,
+              color: Colors.green,
+            ),
             const SizedBox(height: 20),
-            const Text("Your sales requisition was submitted successfully!", textAlign: TextAlign.center, style: TextStyle(fontSize: 18)),
+            const Text(
+              "Your sales requisition was submitted successfully!",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18),
+            ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
               icon: const Icon(Icons.dashboard),
               label: const Text("Back to Dashboard"),
-              onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (_) => false),
+              onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/dashboard',
+                (_) => false,
+              ),
             ),
           ],
         ),

@@ -1,30 +1,23 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+import '../styles/app_styles.dart';
 
 class PdfPreviewScreen extends StatelessWidget {
   final Uint8List pdfBytes;
 
   const PdfPreviewScreen({super.key, required this.pdfBytes});
 
-  // Color scheme to match other screens
-  static const Color primaryColor = Color(0xFF5E4BA6);
-  static const Color secondaryColor = Color(0xFFE55986);
-  static const Color backgroundColor = Color(0xFFF2EDFF);
-  static const Color cardColor = Colors.white;
-  static const Color textColor = Color(0xFF333333);
-  static const Color subtitleColor = Color(0xFF666666);
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppStyles.backgroundColor,
       appBar: AppBar(
         title: const Text(
           'PDF Preview',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: primaryColor,
+        backgroundColor: AppStyles.primaryColor,
         elevation: 0,
         automaticallyImplyLeading: false,
         actions: [
@@ -44,10 +37,10 @@ class PdfPreviewScreen extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: primaryColor.withValues(alpha: 0.05),
+              color: AppStyles.primaryColor.withValues(alpha: 0.05),
               border: Border(
                 bottom: BorderSide(
-                  color: primaryColor.withValues(alpha: 0.1),
+                  color: AppStyles.primaryColor.withValues(alpha: 0.1),
                   width: 1,
                 ),
               ),
@@ -57,12 +50,12 @@ class PdfPreviewScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.1),
+                    color: AppStyles.primaryColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
                     Icons.picture_as_pdf,
-                    color: primaryColor,
+                    color: AppStyles.primaryColor,
                     size: 24,
                   ),
                 ),
@@ -76,13 +69,16 @@ class PdfPreviewScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: textColor,
+                          color: AppStyles.textColor,
                         ),
                       ),
                       SizedBox(height: 4),
                       Text(
                         'Pinch or double-tap to zoom',
-                        style: TextStyle(fontSize: 13, color: subtitleColor),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppStyles.subtitleColor,
+                        ),
                       ),
                     ],
                   ),
@@ -96,7 +92,7 @@ class PdfPreviewScreen extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: cardColor,
+                color: AppStyles.cardColor,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
@@ -116,7 +112,7 @@ class PdfPreviewScreen extends StatelessWidget {
                   allowSharing: false,
                   pdfFileName: 'sales_requisition.pdf',
                   scrollViewDecoration: const BoxDecoration(
-                    color: backgroundColor,
+                    color: AppStyles.backgroundColor,
                   ),
                   padding: EdgeInsets.zero,
                   previewPageMargin: const EdgeInsets.all(8),
@@ -149,7 +145,7 @@ class PdfPreviewScreen extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: textColor,
+                            color: AppStyles.textColor,
                           ),
                         ),
                       ],
@@ -184,11 +180,11 @@ class PdfPreviewScreen extends StatelessWidget {
                     label: const Text('Close'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      side: const BorderSide(color: primaryColor),
+                      side: const BorderSide(color: AppStyles.primaryColor),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      foregroundColor: primaryColor,
+                      foregroundColor: AppStyles.primaryColor,
                     ),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
@@ -199,7 +195,7 @@ class PdfPreviewScreen extends StatelessWidget {
                     icon: const Icon(Icons.share),
                     label: const Text('Share'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: secondaryColor,
+                      backgroundColor: AppStyles.secondaryColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       elevation: 0,
