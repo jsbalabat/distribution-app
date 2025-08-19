@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../styles/app_styles.dart';
 import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
 import 'edit_requisition_screen.dart';
 import 'package:intl/intl.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
-  // Color scheme based on the provided design
-  static const Color primaryColor = Color(0xFF5E4BA6);
-  static const Color secondaryColor = Color(0xFFE55986);
-  static const Color backgroundColor = Color(0xFFF2EDFF);
-  static const Color cardColor = Colors.white;
-  static const Color textColor = Color(0xFF333333);
-  static const Color subtitleColor = Color(0xFF666666);
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final int _currentIndex = 0;
 
   void _logout(BuildContext context) async {
     final bool? didRequestLogout = await showDialog<bool>(
@@ -28,17 +29,20 @@ class DashboardScreen extends StatelessWidget {
           ),
           title: const Text(
             'Confirm Logout',
-            style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: AppStyles.textColor,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           content: const Text(
             'Are you sure you want to log out?',
-            style: TextStyle(color: subtitleColor),
+            style: TextStyle(color: AppStyles.subtitleColor),
           ),
           actions: <Widget>[
             TextButton(
               child: const Text(
                 'Cancel',
-                style: TextStyle(color: primaryColor),
+                style: TextStyle(color: AppStyles.primaryColor),
               ),
               onPressed: () {
                 Navigator.of(dialogContext).pop(false);
@@ -46,7 +50,7 @@ class DashboardScreen extends StatelessWidget {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: secondaryColor,
+                backgroundColor: AppStyles.secondaryColor,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -87,26 +91,36 @@ class DashboardScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
+        ),
         title: const Text(
           'Confirm Delete',
-          style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: AppStyles.textColor,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: const Text(
           'Are you sure you want to delete this record?',
-          style: TextStyle(color: subtitleColor),
+          style: TextStyle(color: AppStyles.subtitleColor),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel', style: TextStyle(color: primaryColor)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppStyles.primaryColor),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(
+                  AppStyles.borderRadiusMedium,
+                ),
               ),
             ),
             onPressed: () async {
@@ -120,7 +134,7 @@ class DashboardScreen extends StatelessWidget {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Record deleted.'),
-                  backgroundColor: secondaryColor,
+                  backgroundColor: AppStyles.secondaryColor,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -146,20 +160,21 @@ class DashboardScreen extends StatelessWidget {
     );
 
     return Scaffold(
-      backgroundColor: backgroundColor,
+      key: _scaffoldKey,
+      backgroundColor: AppStyles.backgroundColor,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: primaryColor,
-        title: const Row(
+        backgroundColor: AppStyles.primaryColor,
+        title: Row(
           children: [
-            Icon(Icons.store_rounded, color: Colors.white),
-            SizedBox(width: 8),
+            Icon(
+              _currentIndex == 0 ? Icons.dashboard_rounded : Icons.receipt_long,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 8),
             Text(
-              'Sales Dashboard',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+              _currentIndex == 0 ? 'Sales Dashboard' : 'My Submissions',
+              style: AppStyles.appBarTitleStyle,
             ),
           ],
         ),
@@ -179,7 +194,7 @@ class DashboardScreen extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(color: primaryColor),
+              child: CircularProgressIndicator(color: AppStyles.primaryColor),
             );
           }
 
@@ -201,7 +216,7 @@ class DashboardScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
+                      backgroundColor: AppStyles.primaryColor,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -233,7 +248,7 @@ class DashboardScreen extends StatelessWidget {
                     child: Icon(
                       Icons.receipt_long,
                       size: 80,
-                      color: primaryColor.withValues(alpha: 0.7),
+                      color: AppStyles.primaryColor.withValues(alpha: 0.7),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -253,7 +268,7 @@ class DashboardScreen extends StatelessWidget {
                   const SizedBox(height: 32),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: secondaryColor,
+                      backgroundColor: AppStyles.secondaryColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
@@ -300,7 +315,7 @@ class DashboardScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 elevation: 2,
-                color: cardColor,
+                color: AppStyles.cardColor,
                 child: ExpansionTile(
                   tilePadding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -313,12 +328,12 @@ class DashboardScreen extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: primaryColor.withValues(alpha: 0.1),
+                          color: AppStyles.primaryColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Icon(
                           Icons.shopping_bag,
-                          color: primaryColor,
+                          color: AppStyles.primaryColor,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -373,7 +388,7 @@ class DashboardScreen extends StatelessWidget {
                           currencyFormat.format(totalAmount),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: primaryColor,
+                            color: AppStyles.primaryColor,
                             fontSize: 13,
                           ),
                         ),
@@ -406,7 +421,7 @@ class DashboardScreen extends StatelessWidget {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
-                                    color: textColor,
+                                    color: AppStyles.textColor,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -447,7 +462,7 @@ class DashboardScreen extends StatelessWidget {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
-                                    color: textColor,
+                                    color: AppStyles.textColor,
                                   ),
                                 ),
                                 const SizedBox(height: 12),
@@ -468,9 +483,8 @@ class DashboardScreen extends StatelessWidget {
                                           Container(
                                             padding: const EdgeInsets.all(6),
                                             decoration: BoxDecoration(
-                                              color: primaryColor.withValues(
-                                                alpha: 0.1,
-                                              ),
+                                              color: AppStyles.primaryColor
+                                                  .withValues(alpha: 0.1),
                                               borderRadius:
                                                   BorderRadius.circular(6),
                                             ),
@@ -478,7 +492,7 @@ class DashboardScreen extends StatelessWidget {
                                               '${item['quantity']}x',
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.bold,
-                                                color: primaryColor,
+                                                color: AppStyles.primaryColor,
                                               ),
                                             ),
                                           ),
@@ -524,7 +538,9 @@ class DashboardScreen extends StatelessWidget {
                                   margin: const EdgeInsets.only(top: 10),
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: primaryColor.withValues(alpha: 0.05),
+                                    color: AppStyles.primaryColor.withValues(
+                                      alpha: 0.05,
+                                    ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Column(
@@ -544,7 +560,7 @@ class DashboardScreen extends StatelessWidget {
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 16,
-                                              color: primaryColor,
+                                              color: AppStyles.primaryColor,
                                             ),
                                           ),
                                         ],
@@ -634,7 +650,7 @@ class DashboardScreen extends StatelessWidget {
                                 _buildActionButton(
                                   icon: Icons.edit,
                                   label: 'Edit',
-                                  color: primaryColor,
+                                  color: AppStyles.primaryColor,
                                   onPressed: () => _navigateToEditForm(
                                     context,
                                     doc.id,
@@ -645,7 +661,7 @@ class DashboardScreen extends StatelessWidget {
                                 _buildActionButton(
                                   icon: Icons.delete,
                                   label: 'Delete',
-                                  color: secondaryColor,
+                                  color: AppStyles.secondaryColor,
                                   onPressed: () =>
                                       _confirmDelete(context, doc.id),
                                 ),
@@ -663,7 +679,7 @@ class DashboardScreen extends StatelessWidget {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: secondaryColor,
+        backgroundColor: AppStyles.secondaryColor,
         child: const Icon(Icons.add, color: Colors.white),
         onPressed: () {
           Navigator.pushNamed(context, '/form');
@@ -689,7 +705,10 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(color: textColor)),
+            child: Text(
+              value,
+              style: const TextStyle(color: AppStyles.textColor),
+            ),
           ),
         ],
       ),
