@@ -22,18 +22,23 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
         ),
         pw.SizedBox(height: 20),
         pw.TableHelper.fromTextArray(
-          headers: ['Item', 'Quantity', 'Unit Price', 'Subtotal'],
+          headers: ['Item Description', 'Item Code', 'Quantity', 'Unit Price'],
           data: items.map((item) {
             return [
               item['name'] ?? '',
+              item['code'] ?? '',
               item['quantity'].toString(),
-              '₱${item['unitPrice']}',
-              '₱${item['subtotal']}',
+              '${item['unitPrice']}',
             ];
           }).toList(),
         ),
         pw.SizedBox(height: 10),
-        pw.Text('Remarks: ${data['remarks'] ?? ''}'),
+        pw.Text('Remarks: ${data['remarks'] ?? 'No remarks'}'),
+        pw.SizedBox(height: 10),
+        pw.Text(
+          'Total Amount: \$${data['totalAmount'] ?? '0.00'}',
+          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+        ),
       ],
     ),
   );
