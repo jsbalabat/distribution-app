@@ -22,7 +22,12 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
         ),
         pw.SizedBox(height: 20),
         pw.TableHelper.fromTextArray(
-          headers: ['Item Description', 'Item Code', 'Quantity', 'Unit Price'],
+          headers: [
+            'Item Description',
+            'Item Code',
+            'Quantity',
+            'Unit Price (in pesos)',
+          ],
           data: items.map((item) {
             return [
               item['name'] ?? '',
@@ -36,7 +41,7 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
         pw.Text('Remarks: ${data['remarks'] ?? 'No remarks'}'),
         pw.SizedBox(height: 10),
         pw.Text(
-          'Total Amount: \$${data['totalAmount'] ?? '0.00'}',
+          'Total Amount (in pesos): ${data['totalAmount'] ?? '0.00'}',
           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
         ),
       ],
