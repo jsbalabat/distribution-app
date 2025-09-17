@@ -43,3 +43,20 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Node.js related
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+package-lock.json
+.npm/
+
+# Firebase related
+google-services.json
+GoogleService-Info.plist
+firebase-debug.log
+.firebase/
+serviceAccountKey.json
+**/lib/firebase_options.dart
+.firebaserc
