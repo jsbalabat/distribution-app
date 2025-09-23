@@ -36,11 +36,18 @@ migrate_working_dir/
 .pub/
 /build/
 .packages
+pubspec.lock
 
 # Web related
 /web/build/
 
-# Android Studio build artifacts
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
@@ -49,6 +56,8 @@ migrate_working_dir/
 /android/.gradle/
 /android/local.properties
 /android/key.properties
+/android/app/release/
+/android/gradle/wrapper/gradle-wrapper.jar
 
 # iOS related
 /ios/Flutter/Flutter.framework
@@ -61,22 +70,127 @@ migrate_working_dir/
 /ios/Runner/GeneratedPluginRegistrant.*
 /ios/Pods/
 /ios/.symlinks/
+/ios/DerivedData/
+ios/Runner.xcworkspace/xcshareddata/
+
+# macOS
+/macos/Flutter/ephemeral/
+/macos/Pods/
+/macos/.symlinks/
+
+# Windows
+/windows/flutter/ephemeral/
+/windows/CMakeFiles/
+/windows/CMakeCache.txt
+
+# Linux
+/linux/flutter/ephemeral/
+
+# Node.js related
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+package-lock.json
+.npm/
+
+# Firebase related
+google-services.json
+GoogleService-Info.plist
+firebase-debug.log
+.firebase/
+serviceAccountKey.json
+**/lib/firebase_options.dart
+.firebaserc
 
 # Environment variables and secrets
 .env
 .env.local
+.env.production
+.env.development
 *.key
 *.pem
 *.p12
 *.keystore
 *.jks
 
-# OS generated files
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Test related
+test/coverage/
+test_driver/screenshots/
+
+# Generated files
+*.g.dart
+*.freezed.dart
+*.gr.dart
+*.config.dart
+*.chopper.dart
+
+# Platform specific
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-$RECYCLE.BIN/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Backup files
+*.bak
+*.backup
+
+# Cache directories
+.cache/
+.tmp/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Build outputs
+dist/
+out/
+release/
+
+# Documentation build
+docs/_build/
+
+# OS generated files
 .AppleDouble
 .LSOverride
 Icon?
 ._*
+.Spotlight-V100
+.Trashes
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Network Shortcuts
+*.lnk
+
+# Flutter version management
+.fvm/
