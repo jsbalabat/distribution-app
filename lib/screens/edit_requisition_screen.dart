@@ -463,7 +463,9 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
               surface: AppStyles.cardColor,
               onSurface: AppStyles.textColor,
             ),
-            dialogBackgroundColor: AppStyles.cardColor,
+            dialogTheme: const DialogThemeData(
+              backgroundColor: AppStyles.cardColor,
+            ),
           ),
           child: child!,
         );
@@ -483,14 +485,16 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
   }
 
   Future<void> _saveChanges() async {
-    // Show confirmation dialog first
+    if (!mounted) return;
+
     showDialog(
       context: context,
-      builder: (context) => ConfirmationDialog(
+      builder: (dialogContext) => ConfirmationDialog(
         title: 'Save Changes',
         message: 'Are you sure you want to save these changes?',
         onConfirm: () async {
-          Navigator.pop(context); // Close dialog
+          // Close the dialog using dialogContext (from the builder)
+          Navigator.pop(dialogContext);
 
           setState(() {
             _isLoading = true;
@@ -509,32 +513,34 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
                   'lastEdited': Timestamp.now(),
                 });
 
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Changes saved successfully'),
-                  backgroundColor: Colors.green,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
-                  ),
+            // Use a new context check after the async gap
+            if (!mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Changes saved successfully'),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(10)),
                 ),
-              );
-              Navigator.pop(context); // Return to dashboard
-            }
+              ),
+            );
+            Navigator.pop(context); // Return to dashboard
           } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error saving changes: $e'),
-                  backgroundColor: Colors.red,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
-                  ),
+            // Check again if still mounted after the async error
+            if (!mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error saving changes: $e'),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(10)),
                 ),
-              );
-            }
+              ),
+            );
           } finally {
             if (mounted) {
               setState(() {

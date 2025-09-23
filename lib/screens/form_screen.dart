@@ -2,7 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:math';
+// import 'dart:math';
 import '../services/firestore_service.dart';
 import '../models/item_model.dart';
 import '../widgets/customer_section.dart';
@@ -620,21 +620,17 @@ class _FormScreenState extends State<FormScreen> {
 
   Future<void> _selectDate(BuildContext context, int dateType) async {
     DateTime? initialDate;
-    String title;
 
     if (dateType == 1) {
       // Request Date
       initialDate = _requestDate ?? DateTime.now();
-      title = "Select Request Date";
     } else if (dateType == 2) {
       // Dispatch Date
       initialDate =
           _dispatchDate ?? DateTime.now().add(const Duration(days: 3));
-      title = "Select Dispatch Date";
     } else {
       // Invoice Date
       initialDate = _invoiceDate ?? DateTime.now();
-      title = "Select Invoice Date";
     }
 
     final DateTime? picked = await showDatePicker(
@@ -651,7 +647,9 @@ class _FormScreenState extends State<FormScreen> {
               surface: AppStyles.cardColor,
               onSurface: AppStyles.textColor,
             ),
-            dialogBackgroundColor: AppStyles.cardColor,
+            dialogTheme: const DialogThemeData(
+              backgroundColor: AppStyles.cardColor,
+            ),
           ),
           child: child!,
         );
@@ -915,14 +913,14 @@ class _FormScreenState extends State<FormScreen> {
       final step = entry.value;
 
       // Determine icon
-      IconData stepIcon;
-      if (index == 0) {
-        stepIcon = Icons.person;
-      } else if (index == 1) {
-        stepIcon = Icons.shopping_cart;
-      } else {
-        stepIcon = Icons.assignment;
-      }
+      // IconData stepIcon;
+      // if (index == 0) {
+      //   stepIcon = Icons.person;
+      // } else if (index == 1) {
+      //   stepIcon = Icons.shopping_cart;
+      // } else {
+      //   stepIcon = Icons.assignment;
+      // }
 
       return Step(
         title: Text(
