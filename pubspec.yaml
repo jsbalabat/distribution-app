@@ -12,24 +12,15 @@ dependencies:
   
   # Updated Firebase versions for better compatibility
   firebase_core: ^2.27.0
-  firebase_auth: ^4.17.8
+  firebase_auth: 4.16.0
   cloud_firestore: ^4.15.8
-  firebase_messaging: ^14.7.19
-  
-  # Firebase UI packages
-  firebase_ui_auth: ^1.12.0
-  firebase_ui_firestore: ^1.5.17
   
   provider: ^6.1.2
-  flutter_hooks: ^0.21.2
-  hooks_riverpod: ^2.5.1
   intl: ^0.20.2
   pdf: ^3.10.6
-  printing: ^5.12.0
+  printing: ^5.13.2
   path_provider: ^2.1.1
   permission_handler: ^11.0.0
-
-  universal_html: ^2.2.4  # For web compatibility
 
 dev_dependencies:
   flutter_test:

@@ -14,7 +14,7 @@ java {
 
 android {
     namespace = "com.marc.new_test_store"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "25.1.8937393"
 
     compileOptions {
@@ -28,12 +28,10 @@ android {
 
     defaultConfig {
         applicationId = "com.marc.new_test_store"
-        minSdk = 23  // Increased from 21 to fix network capability issues
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion 
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        
-        // Add this to fix Firebase messaging issues
         multiDexEnabled = true
     }
 

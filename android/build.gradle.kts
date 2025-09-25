@@ -1,6 +1,6 @@
 buildscript {
     // Declare kotlin_version as an extra property
-    val kotlin_version by extra("1.9.10")
+    val kotlin_version by extra("1.8.10")
     
     repositories {
         google()
@@ -18,17 +18,6 @@ allprojects {
         google()
         mavenCentral()
     }
-}
-
-val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../build").get()
-
-subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-
-subprojects {
-    project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
