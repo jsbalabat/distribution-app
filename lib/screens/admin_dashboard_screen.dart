@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/app_styles.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -109,6 +110,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ],
             ),
+
             const SizedBox(height: 24),
 
             // Quick actions
@@ -149,6 +151,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   icon: Icons.settings,
                   onTap: () {
                     // Navigate to settings screen
+                  },
+                ),
+                _buildActionButton(
+                  label: 'Upload Customers',
+                  icon: Icons.upload_file,
+                  onTap: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Starting upload...')),
+                    );
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('dataImports')
+                          .add({
+                            'requestedAt': FieldValue.serverTimestamp(),
+                            'status': 'pending',
+                            'requestedBy':
+                                userProvider.currentUser?.email ?? 'unknown',
+                          });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            '✅ Import triggered! Check status in Firestore.',
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('❌ Failed to trigger import: $e'),
+                        ),
+                      );
+                    }
                   },
                 ),
               ],
