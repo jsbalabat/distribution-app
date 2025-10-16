@@ -12,6 +12,7 @@ import '../widgets/quantity_input_dialog.dart';
 import '../widgets/customer_search_dialog.dart';
 import '../widgets/edit_quantity_dialog.dart';
 import '../widgets/confirmation_dialog.dart';
+import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
 
@@ -32,6 +33,8 @@ class FormScreen extends StatefulWidget {
 class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormState>();
   int _currentStep = 0;
+
+  final String _remarks = '';
 
   final _deliveryInstructionController = TextEditingController();
   final _invoiceNumberController = TextEditingController();
@@ -55,6 +58,7 @@ class _FormScreenState extends State<FormScreen> {
   List<Item> _allItems = [];
   bool _isLoadingItems = false;
   String? _itemLoadError;
+  bool _isPdfEmailSent = false;
 
   List<Map<String, dynamic>> _selectedItems = [];
   final _quantityController = TextEditingController();
@@ -64,7 +68,12 @@ class _FormScreenState extends State<FormScreen> {
 
   Map<String, String> _customerIdMap = {};
   List<Map<String, dynamic>> _customers = [];
-  final List<bool> _stepValid = [false, false, false]; // track validation
+  final List<bool> _stepValid = [
+    false,
+    false,
+    false,
+    false,
+  ]; // track validation
 
   bool _isSubmitting = false; // Track form submission state
 
@@ -593,6 +602,15 @@ class _FormScreenState extends State<FormScreen> {
         _stepValid[1] = false;
         return false;
       }
+    } else if (step == 2) {
+      // PDF Email step
+      if (_isPdfEmailSent) {
+        _stepValid[2] = true;
+        return true;
+      } else {
+        _stepValid[2] = false;
+        return false;
+      }
     }
     return true;
   }
@@ -897,6 +915,24 @@ class _FormScreenState extends State<FormScreen> {
         ),
       ),
       FormStepData(
+        title: 'PDF & Email',
+        content: PdfEmailSection(
+          selectedCustomer: _selectedCustomer,
+          selectedItems: _selectedItems,
+          sorNumber: _sorNumber,
+          requestDate: _requestDate,
+          dispatchDate: _dispatchDate,
+          invoiceDate: _invoiceDate,
+          totalAmount: _calculateTotal(),
+          remarks: _remarks,
+          onEmailSent: (isSent) {
+            setState(() {
+              _isPdfEmailSent = isSent;
+            });
+          },
+        ),
+      ),
+      FormStepData(
         title: 'Review',
         content: ReviewSection(
           totalAmount: _calculateTotal(),
@@ -912,19 +948,21 @@ class _FormScreenState extends State<FormScreen> {
       final index = entry.key;
       final step = entry.value;
 
-      // Determine icon
-      // IconData stepIcon;
-      // if (index == 0) {
-      //   stepIcon = Icons.person;
-      // } else if (index == 1) {
-      //   stepIcon = Icons.shopping_cart;
-      // } else {
-      //   stepIcon = Icons.assignment;
-      // }
+      String displayTitle = step.title;
+      if (MediaQuery.of(context).size.width < 600) {
+        // Mobile-friendly shortened titles
+        final shortTitles = {
+          'Customer': 'Customer',
+          'Items': 'Items',
+          'PDF & Email': 'PDF', // Shortened from "PDF & Email"
+          'Review': 'Review',
+        };
+        displayTitle = shortTitles[step.title] ?? step.title;
+      }
 
       return Step(
         title: Text(
-          step.title,
+          displayTitle,
           style: TextStyle(
             color: _currentStep == index
                 ? AppStyles.primaryColor
@@ -932,8 +970,21 @@ class _FormScreenState extends State<FormScreen> {
             fontWeight: _currentStep == index
                 ? FontWeight.bold
                 : FontWeight.normal,
+            fontSize: 14,
           ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
+        subtitle: _currentStep == index
+            ? Text(
+                step.title, // Show full title as subtitle when active
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppStyles.subtitleColor,
+                ),
+                overflow: TextOverflow.ellipsis,
+              )
+            : null,
         content: Container(
           margin: const EdgeInsets.only(top: 8, bottom: 24),
           child: step.content,
@@ -986,7 +1037,7 @@ class _FormScreenState extends State<FormScreen> {
               child: Row(
                 children: [
                   Text(
-                    'Step ${_currentStep + 1} of 3',
+                    'Step ${_currentStep + 1} of 4',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: AppStyles.primaryColor,
@@ -995,7 +1046,7 @@ class _FormScreenState extends State<FormScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: LinearProgressIndicator(
-                      value: (_currentStep + 1) / 3,
+                      value: (_currentStep + 1) / 4,
                       backgroundColor: Colors.grey[200],
                       color: AppStyles.primaryColor,
                       borderRadius: BorderRadius.circular(10),

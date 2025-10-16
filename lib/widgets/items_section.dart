@@ -54,10 +54,18 @@ class ItemsSection extends StatelessWidget {
 
           return Card(
             child: ListTile(
-              title: Text(item['name']),
+              // Changed: Item code as title
+              title: Text(
+                item['code'] ??
+                    item['name'], // Fallback to name if code doesn't exist
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              // Changed: Item name and other details in subtitle
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(item['name'], style: const TextStyle(fontSize: 14)),
+                  const SizedBox(height: 4),
                   Text('Qty: ${item['quantity']}'),
                   Text('Unit Price: ₱${item['unitPrice'].toStringAsFixed(2)}'),
                   Text('Subtotal: ₱${item['subtotal'].toStringAsFixed(2)}'),

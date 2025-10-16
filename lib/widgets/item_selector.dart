@@ -26,8 +26,11 @@ class ItemSelector extends StatelessWidget {
               onChanged: (value) {
                 setState(() {
                   filteredItems = items
-                      .where((item) =>
-                      item.name.toLowerCase().contains(value.toLowerCase()))
+                      .where(
+                        (item) => item.code.toLowerCase().contains(
+                          value.toLowerCase(),
+                        ),
+                      )
                       .toList();
                 });
               },
@@ -40,7 +43,8 @@ class ItemSelector extends StatelessWidget {
                 itemBuilder: (_, index) {
                   final item = filteredItems[index];
                   return ListTile(
-                    title: Text(item.name),
+                    title: Text(item.code),
+                    subtitle: Text(item.name),
                     trailing: Text('Stock: ${item.stock}'),
                     onTap: () => onItemSelected(item),
                   );
