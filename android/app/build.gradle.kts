@@ -15,7 +15,7 @@ java {
 android {
     namespace = "com.marc.new_test_store"
     compileSdk = 36
-    ndkVersion = "25.1.8937393"
+    ndkVersion = "26.1.10909125"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -29,10 +29,10 @@ android {
     defaultConfig {
         applicationId = "com.marc.new_test_store"
         minSdk = flutter.minSdkVersion 
-        targetSdk = 35
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        targetSdk = 34
         multiDexEnabled = true
+        versionCode = 1
+        versionName = "1.0"
     }
 
     buildTypes {
@@ -50,7 +50,6 @@ flutter {
 dependencies {
     implementation("androidx.multidex:multidex:2.0.1")
     implementation(platform("com.google.firebase:firebase-bom:33.15.0"))
-    // TODO: Add the dependencies for Firebase products you want to use
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")

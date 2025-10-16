@@ -3,12 +3,14 @@ class Item {
   final String name;
   final String code;
   final int stock;
+  final String description;
 
   Item({
     required this.id,
     required this.name,
     required this.stock,
     required this.code,
+    required this.description,
   });
 
   factory Item.fromMap(String id, Map<String, dynamic> data) {
@@ -17,6 +19,7 @@ class Item {
       name: data['description'] ?? 'Unknown Item',
       stock: data['quantity'] != null ? data['quantity'] as int : 0,
       code: data['itemCode'] ?? 'Unknown Code',
+      description: data['description'] ?? '',
     );
   }
 
@@ -25,6 +28,7 @@ class Item {
       'name': name,
       'stock': stock,
       'code': code,
+      'description': description,
     };
   }
 

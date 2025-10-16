@@ -15,6 +15,10 @@ import '../widgets/confirmation_dialog.dart';
 import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
+import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import './generate_sales_pdf.dart';
 
 class FormStepData {
   final String title;
@@ -40,11 +44,14 @@ class _FormScreenState extends State<FormScreen> {
   final _invoiceNumberController = TextEditingController();
   final _itemDescriptionController = TextEditingController();
   final _itemQuantityController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
 
   String? _remark1;
   String? _remark2;
   String? _accountNumber;
   String? _sorNumber;
+  String? _selectedFileName;
+  String? _pdfFilePath;
   double? _creditLimit;
   double? _amountDue;
   double? _over30Days;
@@ -192,7 +199,63 @@ class _FormScreenState extends State<FormScreen> {
     _deliveryInstructionController.dispose();
     _invoiceNumberController.dispose();
     _quantityController.dispose();
+    _emailController.dispose();
     super.dispose();
+  }
+
+  void _selectPdfFile() async {
+    try {
+      // Prepare data for PDF
+      final pdfData = {
+        'sorNumber': _sorNumber,
+        'customerName': _selectedCustomer?['name'],
+        'accountNumber': _selectedCustomer?['accountNumber'],
+        'timeStamp': Timestamp.now(),
+        'items': _selectedItems
+            .map(
+              (item) => {
+                'name': item['description'],
+                'code': item['itemCode'],
+                'quantity': item['quantity'],
+                'unitPrice': item['regularPrice'],
+              },
+            )
+            .toList(),
+        'remarks': '$_remark1\n$_remark2',
+        'totalAmount': _calculateTotal(),
+      };
+
+      // Generate PDF
+      final Uint8List pdfBytes = await generateSalesPDF(pdfData);
+
+      // Get temporary directory
+      final directory = await getTemporaryDirectory();
+      final pdfFileName = '${_sorNumber ?? 'requisition'}.pdf';
+      final filePath = '${directory.path}/$pdfFileName';
+
+      // Save PDF to temporary file
+      final file = File(filePath);
+      await file.writeAsBytes(pdfBytes);
+
+      setState(() {
+        _selectedFileName = pdfFileName;
+        _pdfFilePath = filePath; // Add this variable to your state
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF generated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to generate PDF: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _checkRemarks(double totalAmount) async {
@@ -514,6 +577,8 @@ class _FormScreenState extends State<FormScreen> {
         'totalAmount': _calculateTotal(),
         'userID': FirebaseAuth.instance.currentUser?.uid,
         'timeStamp': now,
+        'recipientEmail': _emailController.text,
+        'attachedFileName': _selectedFileName,
       };
 
       try {
@@ -748,32 +813,40 @@ class _FormScreenState extends State<FormScreen> {
                         margin: const EdgeInsets.only(bottom: 12),
                         child: Row(
                           children: [
-                            const Expanded(
+                            Expanded(
+                              flex: 2,
                               child: Text(
                                 'Request Date',
                                 style: TextStyle(fontWeight: FontWeight.w500),
                               ),
                             ),
-                            TextButton.icon(
-                              onPressed: () => _selectDate(context, 1),
-                              icon: const Icon(
-                                Icons.edit_calendar,
-                                size: 16,
-                                color: AppStyles.primaryColor,
-                              ),
-                              label: Text(
-                                _requestDate != null
-                                    ? dateFormat.format(_requestDate!)
-                                    : 'Select Date',
-                                style: const TextStyle(
+                            Flexible(
+                              flex: 3,
+                              child: TextButton.icon(
+                                onPressed: () => _selectDate(context, 1),
+                                icon: const Icon(
+                                  Icons.edit_calendar,
+                                  size: 16,
                                   color: AppStyles.primaryColor,
                                 ),
-                              ),
-                              style: TextButton.styleFrom(
-                                backgroundColor: AppStyles.primaryColor
-                                    .withValues(alpha: 0.1),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                label: Text(
+                                  _requestDate != null
+                                      ? dateFormat.format(_requestDate!)
+                                      : 'Select Date',
+                                  style: const TextStyle(
+                                    color: AppStyles.primaryColor,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: AppStyles.primaryColor
+                                      .withValues(alpha: 0.1),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
                                 ),
                               ),
                             ),
@@ -791,32 +864,40 @@ class _FormScreenState extends State<FormScreen> {
                         margin: const EdgeInsets.only(bottom: 12),
                         child: Row(
                           children: [
-                            const Expanded(
+                            Expanded(
+                              flex: 2,
                               child: Text(
                                 'Dispatch Date',
                                 style: TextStyle(fontWeight: FontWeight.w500),
                               ),
                             ),
-                            TextButton.icon(
-                              onPressed: () => _selectDate(context, 2),
-                              icon: const Icon(
-                                Icons.edit_calendar,
-                                size: 16,
-                                color: AppStyles.primaryColor,
-                              ),
-                              label: Text(
-                                _dispatchDate != null
-                                    ? dateFormat.format(_dispatchDate!)
-                                    : 'Select Date',
-                                style: const TextStyle(
+                            Flexible(
+                              flex: 3,
+                              child: TextButton.icon(
+                                onPressed: () => _selectDate(context, 2),
+                                icon: const Icon(
+                                  Icons.edit_calendar,
+                                  size: 16,
                                   color: AppStyles.primaryColor,
                                 ),
-                              ),
-                              style: TextButton.styleFrom(
-                                backgroundColor: AppStyles.primaryColor
-                                    .withValues(alpha: 0.1),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                label: Text(
+                                  _dispatchDate != null
+                                      ? dateFormat.format(_dispatchDate!)
+                                      : 'Select Date',
+                                  style: const TextStyle(
+                                    color: AppStyles.primaryColor,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: AppStyles.primaryColor
+                                      .withValues(alpha: 0.1),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
                                 ),
                               ),
                             ),
@@ -833,32 +914,40 @@ class _FormScreenState extends State<FormScreen> {
                         padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            const Expanded(
+                            Expanded(
+                              flex: 2,
                               child: Text(
                                 'Invoice Date',
                                 style: TextStyle(fontWeight: FontWeight.w500),
                               ),
                             ),
-                            TextButton.icon(
-                              onPressed: () => _selectDate(context, 3),
-                              icon: const Icon(
-                                Icons.edit_calendar,
-                                size: 16,
-                                color: AppStyles.primaryColor,
-                              ),
-                              label: Text(
-                                _invoiceDate != null
-                                    ? dateFormat.format(_invoiceDate!)
-                                    : 'Select Date',
-                                style: const TextStyle(
+                            Flexible(
+                              flex: 3,
+                              child: TextButton.icon(
+                                onPressed: () => _selectDate(context, 3),
+                                icon: const Icon(
+                                  Icons.edit_calendar,
+                                  size: 16,
                                   color: AppStyles.primaryColor,
                                 ),
-                              ),
-                              style: TextButton.styleFrom(
-                                backgroundColor: AppStyles.primaryColor
-                                    .withValues(alpha: 0.1),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                label: Text(
+                                  _invoiceDate != null
+                                      ? dateFormat.format(_invoiceDate!)
+                                      : 'Select Date',
+                                  style: const TextStyle(
+                                    color: AppStyles.primaryColor,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: AppStyles.primaryColor
+                                      .withValues(alpha: 0.1),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
                                 ),
                               ),
                             ),
