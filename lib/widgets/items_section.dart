@@ -1,50 +1,57 @@
 import 'package:flutter/material.dart';
 import '../models/item_model.dart';
-import './item_selector.dart';
 
-class ItemsSection extends StatelessWidget {
+class ItemsSection extends StatefulWidget {
+  final bool isLoading;
+  final String? loadError;
   final List<Item> allItems;
   final List<Map<String, dynamic>> selectedItems;
   final Function(Item) onItemSelected;
   final Function(int) onEditQuantity;
   final Function(int) onDeleteItem;
-  final Future<void> Function() onRefresh;
-  final bool isLoading;
-  final String? loadError;
+  final Future<void> Function()? onRefresh;
 
   const ItemsSection({
     super.key,
+    required this.isLoading,
+    required this.loadError,
     required this.allItems,
     required this.selectedItems,
     required this.onItemSelected,
     required this.onEditQuantity,
     required this.onDeleteItem,
-    required this.onRefresh,
-    required this.isLoading,
-    this.loadError,
+    this.onRefresh,
   });
 
   @override
+  State<ItemsSection> createState() => _ItemsSectionState();
+}
+
+class _ItemsSectionState extends State<ItemsSection> {
+  String _searchQuery = '';
+
+  @override
   Widget build(BuildContext context) {
-    double total = selectedItems.fold(
-      0.0,
-      (currentTotal, item) => currentTotal + (item['subtotal'] ?? 0.0),
-    );
+    final filteredItems = widget.allItems
+        .where(
+          (item) =>
+              item.code.toLowerCase().contains(_searchQuery.toLowerCase()),
+        )
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: 500,
-          child: RefreshIndicator(
-            onRefresh: onRefresh,
-            child: _buildItemsList(),
+        TextField(
+          decoration: const InputDecoration(
+            labelText: 'Search by Item Code',
+            prefixIcon: Icon(Icons.search),
           ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Selected Items:',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+            });
+          },
         ),
         const SizedBox(height: 6),
 
@@ -94,30 +101,5 @@ class ItemsSection extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  Widget _buildItemsList() {
-    if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (loadError != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Error loading items: $loadError'),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: onRefresh, child: const Text('Retry')),
-          ],
-        ),
-      );
-    }
-
-    if (allItems.isEmpty) {
-      return const Center(child: Text('No items found.'));
-    }
-
-    return ItemSelector(items: allItems, onItemSelected: onItemSelected);
   }
 }
