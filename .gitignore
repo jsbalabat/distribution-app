@@ -194,3 +194,5 @@ $RECYCLE.BIN/
 
 # Flutter version management
 .fvm/
+
+output.txt

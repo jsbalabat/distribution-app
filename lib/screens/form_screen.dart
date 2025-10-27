@@ -203,61 +203,6 @@ class _FormScreenState extends State<FormScreen> {
     super.dispose();
   }
 
-  void _selectPdfFile() async {
-    try {
-      // Prepare data for PDF
-      final pdfData = {
-        'sorNumber': _sorNumber,
-        'customerName': _selectedCustomer?['name'],
-        'accountNumber': _selectedCustomer?['accountNumber'],
-        'timeStamp': Timestamp.now(),
-        'items': _selectedItems
-            .map(
-              (item) => {
-                'name': item['description'],
-                'code': item['itemCode'],
-                'quantity': item['quantity'],
-                'unitPrice': item['regularPrice'],
-              },
-            )
-            .toList(),
-        'remarks': '$_remark1\n$_remark2',
-        'totalAmount': _calculateTotal(),
-      };
-
-      // Generate PDF
-      final Uint8List pdfBytes = await generateSalesPDF(pdfData);
-
-      // Get temporary directory
-      final directory = await getTemporaryDirectory();
-      final pdfFileName = '${_sorNumber ?? 'requisition'}.pdf';
-      final filePath = '${directory.path}/$pdfFileName';
-
-      // Save PDF to temporary file
-      final file = File(filePath);
-      await file.writeAsBytes(pdfBytes);
-
-      setState(() {
-        _selectedFileName = pdfFileName;
-        _pdfFilePath = filePath; // Add this variable to your state
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF generated successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to generate PDF: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   Future<void> _checkRemarks(double totalAmount) async {
     final creditLimit = _creditLimit;
     final accountNumber = _accountNumber;

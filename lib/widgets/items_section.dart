@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/item_model.dart';
+import './item_selector.dart';
 
 class ItemsSection extends StatefulWidget {
   final bool isLoading;
@@ -32,46 +33,60 @@ class _ItemsSectionState extends State<ItemsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredItems = widget.allItems
-        .where(
-          (item) =>
-              item.code.toLowerCase().contains(_searchQuery.toLowerCase()),
-        )
-        .toList();
+    double total = widget.selectedItems.fold(
+      0.0,
+      (currentTotal, item) => currentTotal + (item['subtotal'] ?? 0.0),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          decoration: const InputDecoration(
-            labelText: 'Search by Item Code',
-            prefixIcon: Icon(Icons.search),
+        SizedBox(
+          height: 500,
+          child: RefreshIndicator(
+            onRefresh: widget.onRefresh ?? () async {},
+            child: _buildItemsList(),
           ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Selected Items:',
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 6),
 
-        ...selectedItems.asMap().entries.map((entry) {
+        // This is where selectedItems is used - line 58 in your error
+        ...widget.selectedItems.asMap().entries.map((entry) {
           final index = entry.key;
           final item = entry.value;
 
           return Card(
+            margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
-              // Changed: Item code as title
+              leading: CircleAvatar(
+                backgroundColor: Colors.blue.withValues(alpha: 0.1),
+                child: Text(
+                  item['code']?.substring(0, 2).toUpperCase() ?? 'IT',
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              // Item code as title
               title: Text(
-                item['code'] ??
-                    item['name'], // Fallback to name if code doesn't exist
+                item['code'] ?? item['name'] ?? '',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              // Changed: Item name and other details in subtitle
+              // Item name and details in subtitle
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item['name'], style: const TextStyle(fontSize: 14)),
+                  Text(
+                    item['name'] ?? '',
+                    style: const TextStyle(fontSize: 14),
+                  ),
                   const SizedBox(height: 4),
                   Text('Qty: ${item['quantity']}'),
                   Text('Unit Price: ₱${item['unitPrice'].toStringAsFixed(2)}'),
@@ -83,23 +98,55 @@ class _ItemsSectionState extends State<ItemsSection> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.edit, color: Colors.blue),
-                    onPressed: () => onEditQuantity(index),
+                    onPressed: () => widget.onEditQuantity(index),
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => onDeleteItem(index),
+                    onPressed: () => widget.onDeleteItem(index),
                   ),
                 ],
               ),
             ),
           );
         }),
+
         const SizedBox(height: 10),
         Text(
           'Total: ₱${total.toStringAsFixed(2)}',
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
       ],
+    );
+  }
+
+  Widget _buildItemsList() {
+    if (widget.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (widget.loadError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Error loading items: ${widget.loadError}'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: widget.onRefresh,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (widget.allItems.isEmpty) {
+      return const Center(child: Text('No items found.'));
+    }
+
+    return ItemSelector(
+      items: widget.allItems,
+      onItemSelected: widget.onItemSelected,
     );
   }
 }
