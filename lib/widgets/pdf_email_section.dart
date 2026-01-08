@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'dart:typed_data';
+import 'dart:convert';
 import '../styles/app_styles.dart';
 import 'package:flutter/foundation.dart';
-import 'package:web/web.dart' as web;
-import 'dart:js_interop';
 import 'package:intl/intl.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class PdfEmailSection extends StatefulWidget {
   final Map<String, dynamic>? selectedCustomer;
@@ -69,49 +68,52 @@ class _PdfEmailSectionState extends State<PdfEmailSection> {
       pdf.addPage(
         pw.MultiPage(
           build: (context) => [
-            // Title - matching generate_sales_pdf.dart
+            // Title
             pw.Text(
               'Sales Requisition Report',
               style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 10),
 
-            // Header Information - matching generate_sales_pdf.dart
+            // Header Information
             pw.Text('SOR #: ${widget.sorNumber}'),
             pw.Text('Customer: ${widget.selectedCustomer?['name'] ?? ''}'),
             pw.Text(
               'Account #: ${widget.selectedCustomer?['accountNumber'] ?? ''}',
             ),
             pw.Text('Date: $formattedDate'),
-
             pw.SizedBox(height: 20),
 
-            // Items Table - matching generate_sales_pdf.dart format exactly
+            // Items Table
             pw.TableHelper.fromTextArray(
               headers: [
                 'Item Description',
                 'Item Code',
                 'Quantity',
-                'Unit Price (in pesos)',
+                'Amount (in pesos)',
               ],
               data: items.map((item) {
+                final quantity = (item['quantity'] ?? 0).toDouble();
+                final unitPrice = (item['unitPrice'] ?? 0).toDouble();
+                final subtotal = quantity * unitPrice;
+
                 return [
                   item['name'] ?? '',
                   item['code'] ?? '',
-                  item['quantity'].toString(),
-                  '${item['unitPrice']}',
+                  quantity.toStringAsFixed(2),
+                  subtotal.toStringAsFixed(2),
                 ];
               }).toList(),
             ),
 
             pw.SizedBox(height: 10),
 
-            // Remarks - matching generate_sales_pdf.dart
+            // Remarks
             pw.Text('Remarks: ${widget.remarks ?? 'No remarks'}'),
 
             pw.SizedBox(height: 10),
 
-            // Total Amount - matching generate_sales_pdf.dart
+            // Total Amount
             pw.Text(
               'Total Amount (in pesos): ${widget.totalAmount.toStringAsFixed(2)}',
               style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
@@ -147,33 +149,24 @@ class _PdfEmailSectionState extends State<PdfEmailSection> {
 
     try {
       if (kIsWeb) {
-        final fileName =
-            'SOR_${widget.sorNumber}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-        final blob = web.Blob(
-          [_pdfBytes!.toJS].toJS,
-          web.BlobPropertyBag(type: 'application/pdf'),
-        );
-        final url = web.URL.createObjectURL(blob);
-
-        final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
-        anchor.href = url;
-        anchor.download = fileName;
-        anchor.style.display = 'none';
-
-        web.document.body?.appendChild(anchor);
-        anchor.click();
-        web.document.body?.removeChild(anchor);
-
-        web.URL.revokeObjectURL(url);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('PDF downloaded successfully!'),
-              backgroundColor: Colors.green,
+        // Web download using dart:html (if you add it back)
+        // For now, show message that download is not available
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'PDF download not available on web. Use email instead.',
             ),
-          );
-        }
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        // Mobile: Save to downloads (implement with path_provider)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF download not implemented for mobile yet'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -225,50 +218,85 @@ class _PdfEmailSectionState extends State<PdfEmailSection> {
     });
 
     try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      // Check if user is authenticated
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
 
-      // TODO: Implement actual email sending here
-      // Example integration points:
-      //
-      // Firebase Cloud Functions:
-      // await FirebaseFunctions.instance
-      //     .httpsCallable('sendSalesRequisitionEmail')
-      //     .call({
-      //       'to': _emailController.text,
-      //       'subject': 'Sales Requisition Order - ${widget.sorNumber}',
-      //       'pdfData': base64.encode(_pdfBytes!),
-      //       'fileName': 'SOR_${widget.sorNumber}.pdf',
-      //       'customerName': widget.selectedCustomer?['name'],
-      //       'sorNumber': widget.sorNumber,
-      //     });
-      //
-      // Or your backend API:
-      // final response = await http.post(
-      //   Uri.parse('https://your-api.com/send-email'),
-      //   headers: {'Content-Type': 'application/json'},
-      //   body: jsonEncode({
-      //     'email': _emailController.text,
-      //     'subject': 'Sales Requisition Order - ${widget.sorNumber}',
-      //     'pdfBase64': base64.encode(_pdfBytes!),
-      //     'fileName': 'SOR_${widget.sorNumber}.pdf',
-      //   }),
-      // );
+      // Convert PDF bytes to base64
+      final base64Pdf = base64Encode(_pdfBytes!);
 
+      // Prepare file name
+      final fileName =
+          'SOR_${widget.sorNumber}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+      // Call Firebase Cloud Function
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'sendSalesRequisitionEmail',
+      );
+
+      final result = await callable.call({
+        'to': _emailController.text.trim(),
+        'subject': 'Sales Requisition Order - ${widget.sorNumber}',
+        'pdfData': base64Pdf,
+        'fileName': fileName,
+        'customerName': widget.selectedCustomer?['name'] ?? 'Valued Customer',
+        'sorNumber': widget.sorNumber ?? 'N/A',
+      });
+
+      // Check if email was sent successfully
+      if (result.data['success'] == true) {
+        setState(() {
+          _isEmailSent = true;
+          _isGeneratingPdf = false;
+        });
+
+        widget.onEmailSent(true);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Email sent successfully to ${_emailController.text}',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to send email: ${result.data['message']}');
+      }
+    } on FirebaseFunctionsException catch (e) {
       setState(() {
-        _isEmailSent = true;
         _isGeneratingPdf = false;
       });
 
-      widget.onEmailSent(true);
+      String errorMessage = 'Error sending email';
+
+      switch (e.code) {
+        case 'unauthenticated':
+          errorMessage = 'You must be logged in to send emails';
+          break;
+        case 'invalid-argument':
+          errorMessage = 'Invalid email address or missing data';
+          break;
+        case 'failed-precondition':
+          errorMessage = 'Email service is not configured properly';
+          break;
+        case 'internal':
+          errorMessage = 'Server error: ${e.message}';
+          break;
+        default:
+          errorMessage = 'Error: ${e.message}';
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Email sent successfully to ${_emailController.text}',
-            ),
-            backgroundColor: Colors.green,
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -281,6 +309,7 @@ class _PdfEmailSectionState extends State<PdfEmailSection> {
           SnackBar(
             content: Text('Error sending email: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -368,11 +397,12 @@ class _PdfEmailSectionState extends State<PdfEmailSection> {
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: _downloadPdf,
-                  icon: const Icon(Icons.download, color: Colors.green),
-                  tooltip: 'Download PDF',
-                ),
+                if (!kIsWeb)
+                  IconButton(
+                    onPressed: _downloadPdf,
+                    icon: const Icon(Icons.download, color: Colors.green),
+                    tooltip: 'Download PDF',
+                  ),
               ],
             ),
           ),

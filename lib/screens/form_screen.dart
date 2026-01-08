@@ -15,10 +15,6 @@ import '../widgets/confirmation_dialog.dart';
 import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
-import 'dart:typed_data';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import './generate_sales_pdf.dart';
 
 class FormStepData {
   final String title;
@@ -51,7 +47,6 @@ class _FormScreenState extends State<FormScreen> {
   String? _accountNumber;
   String? _sorNumber;
   String? _selectedFileName;
-  String? _pdfFilePath;
   double? _creditLimit;
   double? _amountDue;
   double? _over30Days;

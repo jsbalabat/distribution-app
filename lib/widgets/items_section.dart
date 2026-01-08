@@ -29,7 +29,7 @@ class ItemsSection extends StatefulWidget {
 }
 
 class _ItemsSectionState extends State<ItemsSection> {
-  String _searchQuery = '';
+  // final String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {

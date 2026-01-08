@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../utils/app_styles.dart';
+import '../styles/app_styles.dart';
 
 class EmailPdfSection extends StatelessWidget {
   final TextEditingController emailController;

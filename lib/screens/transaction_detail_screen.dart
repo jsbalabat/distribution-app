@@ -3,14 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-
-// Color scheme matching the dashboard
-const Color primaryColor = Color(0xFF5E4BA6);
-const Color secondaryColor = Color(0xFFE55986);
-const Color backgroundColor = Color(0xFFF2EDFF);
-const Color cardColor = Colors.white;
-const Color textColor = Color(0xFF333333);
-const Color subtitleColor = Color(0xFF666666);
+import '../styles/app_styles.dart';
 
 Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
   final pdf = pw.Document();
@@ -59,13 +52,10 @@ class TransactionDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppStyles.backgroundColor,
       appBar: AppBar(
-        title: const Text(
-          'All Item Transactions',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: primaryColor,
+        title: Text('All Item Transactions', style: AppStyles.appBarTitleStyle),
+        backgroundColor: AppStyles.primaryColor,
         elevation: 0,
         actions: [
           IconButton(
@@ -76,12 +66,14 @@ class TransactionDetailScreen extends StatelessWidget {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Filtering coming soon!'),
-                  backgroundColor: secondaryColor,
+                  backgroundColor: AppStyles.secondaryColor,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(
+                      AppStyles.borderRadiusMedium,
+                    ),
                   ),
-                  margin: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.all(AppStyles.paddingMedium),
                 ),
               );
             },
@@ -101,12 +93,12 @@ class TransactionDetailScreen extends StatelessWidget {
           // Header/Summary section
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: AppStyles.cardPadding,
             decoration: BoxDecoration(
-              color: primaryColor.withValues(alpha: 0.05),
+              color: AppStyles.primaryColor.withValues(alpha: 0.05),
               border: Border(
                 bottom: BorderSide(
-                  color: primaryColor.withValues(alpha: 0.1),
+                  color: AppStyles.primaryColor.withValues(alpha: 0.1),
                   width: 1,
                 ),
               ),
@@ -114,28 +106,23 @@ class TransactionDetailScreen extends StatelessWidget {
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: primaryColor.withValues(alpha: 0.1),
+                  backgroundColor: AppStyles.primaryColor.withValues(
+                    alpha: 0.1,
+                  ),
                   radius: 24,
                   child: const Icon(
                     Icons.receipt_long,
-                    color: primaryColor,
+                    color: AppStyles.primaryColor,
                     size: 24,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: AppStyles.spacingM),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Transaction Details',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: textColor,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
+                      Text('Transaction Details', style: AppStyles.titleStyle),
+                      const SizedBox(height: AppStyles.spacingXS),
                       StreamBuilder<QuerySnapshot>(
                         stream: FirebaseFirestore.instance
                             .collection('salesRequisitions')
@@ -147,7 +134,7 @@ class TransactionDetailScreen extends StatelessWidget {
                               : 0;
                           return Text(
                             'Showing all $totalTransactions transaction records',
-                            style: const TextStyle(color: subtitleColor),
+                            style: AppStyles.subtitleStyle,
                           );
                         },
                       ),
@@ -160,15 +147,20 @@ class TransactionDetailScreen extends StatelessWidget {
 
           // Search bar (optional)
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: AppStyles.cardPadding,
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Search transactions...',
-                prefixIcon: const Icon(Icons.search, color: primaryColor),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: AppStyles.primaryColor,
+                ),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: AppStyles.cardColor,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(
+                    AppStyles.borderRadiusLarge,
+                  ),
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -181,15 +173,11 @@ class TransactionDetailScreen extends StatelessWidget {
 
           // Table header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: const Text(
-              'Transaction Items',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppStyles.spacingM,
+              vertical: AppStyles.spacingS,
             ),
+            child: Text('Transaction Items', style: AppStyles.titleStyle),
           ),
 
           // Table (preserved as is)
@@ -209,7 +197,9 @@ class TransactionDetailScreen extends StatelessWidget {
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
-                      child: CircularProgressIndicator(color: primaryColor),
+                      child: CircularProgressIndicator(
+                        color: AppStyles.primaryColor,
+                      ),
                     );
                   }
 
@@ -221,14 +211,15 @@ class TransactionDetailScreen extends StatelessWidget {
                           Icon(
                             Icons.receipt_long,
                             size: 64,
-                            color: primaryColor.withValues(alpha: 0.5),
+                            color: AppStyles.primaryColor.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
-                          const SizedBox(height: 16),
-                          const Text(
+                          const SizedBox(height: AppStyles.spacingM),
+                          Text(
                             'No transactions available.',
-                            style: TextStyle(
-                              color: subtitleColor,
-                              fontSize: 16,
+                            style: AppStyles.subtitleStyle.copyWith(
+                              fontSize: AppStyles.fontSizeMedium,
                             ),
                           ),
                         ],
@@ -264,8 +255,7 @@ class TransactionDetailScreen extends StatelessWidget {
                               IconButton(
                                 icon: const Icon(
                                   Icons.picture_as_pdf,
-                                  color:
-                                      secondaryColor, // Changed from red to match theme
+                                  color: AppStyles.secondaryColor,
                                 ),
                                 tooltip: 'Download PDF',
                                 onPressed: () {
@@ -284,9 +274,7 @@ class TransactionDetailScreen extends StatelessWidget {
                     child: SingleChildScrollView(
                       child: DataTable(
                         headingRowColor: WidgetStateProperty.resolveWith(
-                          (_) => primaryColor.withValues(
-                            alpha: 0.1,
-                          ), // Changed from grey to theme color
+                          (_) => AppStyles.primaryColor.withValues(alpha: 0.1),
                         ),
                         columns: const [
                           DataColumn(
@@ -351,18 +339,19 @@ class TransactionDetailScreen extends StatelessWidget {
       ),
       // Optional: Add a floating action button for quick actions
       floatingActionButton: FloatingActionButton(
-        backgroundColor: secondaryColor,
+        backgroundColor: AppStyles.secondaryColor,
         onPressed: () {
-          // Export to Excel or perform other actions
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text('Export feature coming soon!'),
-              backgroundColor: secondaryColor,
+              backgroundColor: AppStyles.secondaryColor,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(
+                  AppStyles.borderRadiusMedium,
+                ),
               ),
-              margin: const EdgeInsets.all(10),
+              margin: const EdgeInsets.all(AppStyles.paddingMedium),
             ),
           );
         },

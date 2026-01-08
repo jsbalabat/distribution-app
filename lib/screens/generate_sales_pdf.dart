@@ -10,7 +10,7 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
     pw.MultiPage(
       build: (context) => [
         pw.Text(
-          'Sales Requisition Report',
+          'Sales Requisition',
           style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 10),
@@ -20,20 +20,26 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
         pw.Text(
           'Date: ${data['timeStamp']?.toDate().toString().split(' ')[0] ?? ''}',
         ),
+        pw.Text('Sender: ${data['accountNumber']}'),
         pw.SizedBox(height: 20),
         pw.TableHelper.fromTextArray(
           headers: [
             'Item Description',
             'Item Code',
             'Quantity',
-            'Unit Price (in pesos)',
+            'Amount (in pesos)',
           ],
           data: items.map((item) {
+            final quantity = (item['quantity'] ?? 0).toDouble();
+            final unitPrice = (item['unitPrice'] ?? 0).toDouble();
+            final subtotal = quantity * unitPrice;
+
             return [
               item['name'] ?? '',
               item['code'] ?? '',
-              item['quantity'].toString(),
-              '${item['unitPrice']}',
+              quantity.toStringAsFixed(2),
+              unitPrice.toStringAsFixed(2),
+              subtotal.toStringAsFixed(2),
             ];
           }).toList(),
         ),

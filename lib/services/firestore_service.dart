@@ -23,8 +23,8 @@ class FirestoreService {
           .get();
 
       if (snapshot.docs.isNotEmpty) {
-        return snapshot.docs.first.data(); // ✅ item data found
-      } else {}
+        return snapshot.docs.first.data();
+      }
       return null;
     } catch (e) {
       return null;

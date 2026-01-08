@@ -32,7 +32,6 @@ class AuthService {
         return defaultUser;
       }
     } catch (e) {
-      // print('Error getting user data: $e');
       return null;
     }
   }
@@ -53,7 +52,6 @@ class AuthService {
       }
       return null;
     } catch (e) {
-      // print('Error signing in: $e');
       rethrow;
     }
   }
@@ -88,7 +86,6 @@ class AuthService {
           return defaultUser;
         }
       } catch (e) {
-        // print('Error in user stream: $e');
         return null;
       }
     });

@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
-import '../utils/app_styles.dart';
+import '../styles/app_styles.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -172,15 +172,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            '✅ Import triggered! Check status in Firestore.',
+                            'Import triggered! Check status in Firestore.',
                           ),
                         ),
                       );
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('❌ Failed to trigger import: $e'),
-                        ),
+                        SnackBar(content: Text('Failed to trigger import: $e')),
                       );
                     }
                   },

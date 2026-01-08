@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
-import '../utils/app_styles.dart';
+import '../styles/app_styles.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -15,18 +15,14 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
 
-  bool _isLogin = true;
   bool _isLoading = false;
   String _errorMessage = '';
 
   @override
   void dispose() {
-    // Clean up controllers
     _emailController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
     super.dispose();
   }
 
@@ -52,7 +48,7 @@ class _AuthScreenState extends State<AuthScreen> {
       // Check if widget is still mounted before setting state
       if (!mounted) return;
 
-      // If we reach here, authentication was successful
+      // Authentication is successful here
       // The Consumer in main.dart will handle navigation
     } catch (e) {
       // Check if widget is still mounted before setting state
@@ -69,15 +65,6 @@ class _AuthScreenState extends State<AuthScreen> {
         });
       }
     }
-  }
-
-  void _switchAuthMode() {
-    if (!mounted) return;
-
-    setState(() {
-      _isLogin = !_isLogin;
-      _errorMessage = '';
-    });
   }
 
   @override
@@ -118,36 +105,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                       const SizedBox(height: 32),
 
-                      // Auth Mode Title
-                      Text(
-                        _isLogin ? 'Sign In' : 'Create Account',
-                        style: const TextStyle(
+                      const Text(
+                        'Sign In',
+                        style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 24),
-
-                      // Name field (only for sign up)
-                      if (!_isLogin) ...[
-                        TextFormField(
-                          controller: _nameController,
-                          decoration: InputDecoration(
-                            labelText: 'Full Name',
-                            prefixIcon: const Icon(Icons.person),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter your name';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                      ],
 
                       // Email field
                       TextFormField(
@@ -198,26 +163,35 @@ class _AuthScreenState extends State<AuthScreen> {
                       // Error message
                       if (_errorMessage.isNotEmpty) ...[
                         Container(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(AppStyles.paddingSmall),
                           decoration: BoxDecoration(
-                            color: Colors.red[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.red[200]!),
+                            color: AppStyles.errorColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(
+                              AppStyles.borderRadiusMedium,
+                            ),
+                            border: Border.all(
+                              color: AppStyles.errorColor.withValues(
+                                alpha: 0.3,
+                              ),
+                            ),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.error_outline, color: Colors.red[700]),
-                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.error_outline,
+                                color: AppStyles.errorColor,
+                              ),
+                              const SizedBox(width: AppStyles.spacingS),
                               Expanded(
                                 child: Text(
                                   _errorMessage,
-                                  style: TextStyle(color: Colors.red[700]),
+                                  style: TextStyle(color: AppStyles.errorColor),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppStyles.spacingM),
                       ],
 
                       // Submit button
@@ -243,26 +217,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                     ),
                                   ),
                                 )
-                              : Text(
-                                  _isLogin ? 'Sign In' : 'Create Account',
-                                  style: const TextStyle(
+                              : const Text(
+                                  'Sign In',
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white,
                                   ),
                                 ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Switch auth mode
-                      TextButton(
-                        onPressed: _isLoading ? null : _switchAuthMode,
-                        child: Text(
-                          _isLogin
-                              ? "Don't have an account? Sign Up"
-                              : "Already have an account? Sign In",
-                          style: TextStyle(color: AppStyles.primaryColor),
                         ),
                       ),
                     ],
