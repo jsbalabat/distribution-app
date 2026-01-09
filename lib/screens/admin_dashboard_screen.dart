@@ -19,171 +19,207 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final userName = userProvider.currentUser?.name ?? 'Admin';
 
     return Scaffold(
+      backgroundColor: AppStyles.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Admin Dashboard'),
+        elevation: 0,
+        backgroundColor: AppStyles.adminPrimaryColor,
+        title: Text('Admin Dashboard', style: AppStyles.appBarTitleStyle),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => userProvider.signOut(),
-            tooltip: 'Sign Out',
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: IconButton(
+              icon: const Icon(Icons.logout_outlined),
+              onPressed: () => userProvider.signOut(),
+              tooltip: 'Sign Out',
+            ),
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Welcome card
-            Card(
-              color: AppStyles.primaryColor.withValues(alpha: 0.1),
-              elevation: 2,
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppStyles.adminPrimaryColor, AppStyles.primaryColor],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(
+                AppStyles.spacingL,
+                AppStyles.spacingL,
+                AppStyles.spacingL,
+                AppStyles.spacingXL,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welcome back,',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    userName,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    userProvider.currentUser?.email ?? '',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Transform.translate(
+              offset: const Offset(0, -20),
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppStyles.spacingM,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Welcome, $userName',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: AppStyles.spacingM,
+                      mainAxisSpacing: AppStyles.spacingM,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      childAspectRatio: 1.3,
+                      children: [
+                        _buildStatCard(
+                          title: 'Total Users',
+                          value: '124',
+                          icon: Icons.people_outline,
+                          gradientColors: AppStyles.statCardGradients[0],
+                        ),
+                        _buildStatCard(
+                          title: 'Total Sales',
+                          value: '₱245K',
+                          icon: Icons.attach_money,
+                          gradientColors: AppStyles.statCardGradients[1],
+                        ),
+                        _buildStatCard(
+                          title: 'Pending Orders',
+                          value: '12',
+                          icon: Icons.shopping_cart_outlined,
+                          gradientColors: AppStyles.statCardGradients[2],
+                        ),
+                        _buildStatCard(
+                          title: 'Products',
+                          value: '48',
+                          icon: Icons.inventory_2_outlined,
+                          gradientColors: AppStyles.statCardGradients[3],
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'You are logged in as: ${userProvider.currentUser?.email}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.black87,
-                      ),
+
+                    const SizedBox(height: AppStyles.spacingXL),
+
+                    Text('Quick Actions', style: AppStyles.headingStyle),
+                    const SizedBox(height: AppStyles.spacingM),
+
+                    _buildActionCard(
+                      label: 'Manage Users',
+                      subtitle: 'View and edit user accounts',
+                      icon: Icons.people_outline,
+                      color: Colors.blue,
+                      onTap: () {},
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'This is your admin dashboard where you can manage all aspects of the sales system.',
-                      style: TextStyle(fontSize: 14),
+                    const SizedBox(height: AppStyles.spacingM),
+
+                    _buildActionCard(
+                      label: 'View Reports',
+                      subtitle: 'Analytics and insights',
+                      icon: Icons.bar_chart_rounded,
+                      color: Colors.green,
+                      onTap: () {},
                     ),
+                    const SizedBox(height: AppStyles.spacingM),
+
+                    _buildActionCard(
+                      label: 'Inventory',
+                      subtitle: 'Manage product inventory',
+                      icon: Icons.inventory_2_outlined,
+                      color: Colors.purple,
+                      onTap: () {},
+                    ),
+                    const SizedBox(height: AppStyles.spacingM),
+
+                    _buildActionCard(
+                      label: 'Upload Customers',
+                      subtitle: 'Import customer data',
+                      icon: Icons.upload_file_outlined,
+                      color: Colors.orange,
+                      onTap: () async {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Starting upload...'),
+                            backgroundColor: AppStyles.infoColor,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                        try {
+                          await FirebaseFirestore.instance
+                              .collection('dataImports')
+                              .add({
+                                'requestedAt': FieldValue.serverTimestamp(),
+                                'status': 'pending',
+                                'requestedBy':
+                                    userProvider.currentUser?.email ??
+                                    'unknown',
+                              });
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text(
+                                'Import triggered! Check status in Firestore.',
+                              ),
+                              backgroundColor: AppStyles.successColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to trigger import: $e'),
+                              backgroundColor: AppStyles.errorColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(height: AppStyles.spacingM),
+
+                    _buildActionCard(
+                      label: 'Settings',
+                      subtitle: 'System configuration',
+                      icon: Icons.settings_outlined,
+                      color: Colors.grey,
+                      onTap: () {},
+                    ),
+
+                    const SizedBox(height: AppStyles.spacingXL),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
-
-            // Dashboard stats section
-            const Text(
-              'Overview',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-
-            // Stats cards
-            GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildStatCard(
-                  title: 'Total Users',
-                  value: '124',
-                  icon: Icons.people,
-                  color: Colors.blue,
-                ),
-                _buildStatCard(
-                  title: 'Total Sales',
-                  value: '₱245,689',
-                  icon: Icons.attach_money,
-                  color: Colors.green,
-                ),
-                _buildStatCard(
-                  title: 'Pending Orders',
-                  value: '12',
-                  icon: Icons.shopping_cart,
-                  color: Colors.orange,
-                ),
-                _buildStatCard(
-                  title: 'Products',
-                  value: '48',
-                  icon: Icons.inventory,
-                  color: Colors.purple,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // Quick actions
-            const Text(
-              'Quick Actions',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-
-            // Action buttons
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
-                _buildActionButton(
-                  label: 'Manage Users',
-                  icon: Icons.people,
-                  onTap: () {
-                    // Navigate to user management screen
-                  },
-                ),
-                _buildActionButton(
-                  label: 'View Reports',
-                  icon: Icons.bar_chart,
-                  onTap: () {
-                    // Navigate to reports screen
-                  },
-                ),
-                _buildActionButton(
-                  label: 'Inventory',
-                  icon: Icons.inventory,
-                  onTap: () {
-                    // Navigate to inventory screen
-                  },
-                ),
-                _buildActionButton(
-                  label: 'Settings',
-                  icon: Icons.settings,
-                  onTap: () {
-                    // Navigate to settings screen
-                  },
-                ),
-                _buildActionButton(
-                  label: 'Upload Customers',
-                  icon: Icons.upload_file,
-                  onTap: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Starting upload...')),
-                    );
-                    try {
-                      await FirebaseFirestore.instance
-                          .collection('dataImports')
-                          .add({
-                            'requestedAt': FieldValue.serverTimestamp(),
-                            'status': 'pending',
-                            'requestedBy':
-                                userProvider.currentUser?.email ?? 'unknown',
-                          });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Import triggered! Check status in Firestore.',
-                          ),
-                        ),
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to trigger import: $e')),
-                      );
-                    }
-                  },
-                ),
-              ],
             ),
           ],
         ),
@@ -195,30 +231,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required String title,
     required String value,
     required IconData icon,
-    required Color color,
+    required List<Color> gradientColors,
   }) {
-    return Card(
-      elevation: 2,
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
+        boxShadow: [
+          BoxShadow(
+            color: gradientColors[0].withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(AppStyles.spacingM),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 40, color: color),
-            const SizedBox(height: 8),
+            Icon(icon, size: 32, color: Colors.white.withValues(alpha: 0.9)),
+            const Spacer(),
             Text(
               value,
-              style: TextStyle(
-                fontSize: 20,
+              style: const TextStyle(
+                fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: color,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               title,
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
             ),
           ],
         ),
@@ -226,39 +279,59 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildActionButton({
+  Widget _buildActionCard({
     required String label,
+    required String subtitle,
     required IconData icon,
+    required Color color,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: 140,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 32, color: AppStyles.primaryColor),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
-          ],
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
+        side: BorderSide(color: Colors.grey.withValues(alpha: 0.2), width: 1),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
+        child: Padding(
+          padding: const EdgeInsets.all(AppStyles.spacingM),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(
+                    AppStyles.borderRadiusMedium,
+                  ),
+                ),
+                child: Icon(icon, size: 28, color: color),
+              ),
+              const SizedBox(width: AppStyles.spacingM),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
+            ],
+          ),
         ),
       ),
     );
