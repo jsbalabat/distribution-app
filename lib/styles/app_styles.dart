@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
 
 class AppStyles {
-  static const Color primaryColor = Color(0xFF5E4BA6);
-  static const Color secondaryColor = Color(0xFFE55986);
-  static const Color accentColor = Color(0xFFE1BEE7);
-  static const Color backgroundColor = Color(0xFFF2EDFF);
-  static const Color cardColor = Colors.white;
-  static const Color scaffoldBackgroundColor = Color(0xFFFAFAFA);
-  static const Color textColor = Color(0xFF333333);
-  static const Color subtitleColor = Color(0xFF666666);
-  static const Color textSecondaryColor = Color(0xFF757575);
-  static const Color textLightColor = Color(0xFF9E9E9E);
+  // Modern Black and White Color Palette with Hues
+  static const Color primaryColor = Color(0xFF000000); // Pure Black
+  static const Color secondaryColor = Color(0xFF1A1A1A); // Dark Charcoal
+  static const Color accentColor = Color(0xFF2D2D2D); // Medium Charcoal
+  static const Color backgroundColor = Color(0xFFF5F5F5); // Off White
+  static const Color cardColor = Color(0xFFFFFFFF); // Pure White
+  static const Color scaffoldBackgroundColor = Color(0xFFFAFAFA); // Light Gray
+  static const Color textColor = Color(0xFF0A0A0A); // Near Black
+  static const Color subtitleColor = Color(0xFF4A4A4A); // Dark Gray
+  static const Color textSecondaryColor = Color(0xFF6B6B6B); // Medium Gray
+  static const Color textLightColor = Color(0xFF9E9E9E); // Light Gray
 
-  static const Color successColor = Color(0xFF4CAF50);
-  static const Color warningColor = Color(0xFFFFC107);
-  static const Color errorColor = Color(0xFFF44336);
-  static const Color infoColor = Color(0xFF2196F3);
-  static const Color adminPrimaryColor = Color(0xFF1A237E);
+  // Status Colors - Modern Monochrome Variants
+  static const Color successColor = Color(0xFF2C2C2C); // Dark Gray (Success)
+  static const Color warningColor = Color(0xFF555555); // Medium Gray (Warning)
+  static const Color errorColor = Color(0xFF1A1A1A); // Charcoal (Error)
+  static const Color infoColor = Color(0xFF3D3D3D); // Slate Gray (Info)
+  static const Color adminPrimaryColor = Color(
+    0xFF000000,
+  ); // Pure Black (Admin)
 
   static const double fontSizeSmall = 12.0;
   static const double fontSizeNormal = 14.0;
@@ -135,9 +139,15 @@ class AppStyles {
     borderRadius: BorderRadius.circular(borderRadiusLarge),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withValues(alpha: 0.05),
-        spreadRadius: 1,
-        blurRadius: 5,
+        color: Colors.black.withValues(alpha: 0.08),
+        spreadRadius: 0,
+        blurRadius: 10,
+        offset: const Offset(0, 4),
+      ),
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.04),
+        spreadRadius: 0,
+        blurRadius: 4,
         offset: const Offset(0, 2),
       ),
     ],
@@ -148,9 +158,15 @@ class AppStyles {
     borderRadius: BorderRadius.circular(borderRadiusLarge),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withValues(alpha: 0.05),
-        spreadRadius: 1,
-        blurRadius: 5,
+        color: Colors.black.withValues(alpha: 0.08),
+        spreadRadius: 0,
+        blurRadius: 10,
+        offset: const Offset(0, 4),
+      ),
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.04),
+        spreadRadius: 0,
+        blurRadius: 4,
         offset: const Offset(0, 2),
       ),
     ],
@@ -165,10 +181,10 @@ class AppStyles {
   }
 
   static const List<List<Color>> statCardGradients = [
-    [Color(0xFF1A237E), Color(0xFF3949AB)],
-    [Color(0xFF1B5E20), Color(0xFF388E3C)],
-    [Color(0xFFE65100), Color(0xFFF57C00)],
-    [Color(0xFF4A148C), Color(0xFF7B1FA2)],
+    [Color(0xFF000000), Color(0xFF2D2D2D)], // Black to Charcoal
+    [Color(0xFF1A1A1A), Color(0xFF3D3D3D)], // Dark Charcoal to Slate
+    [Color(0xFF2D2D2D), Color(0xFF4A4A4A)], // Charcoal to Dark Gray
+    [Color(0xFF0A0A0A), Color(0xFF262626)], // Near Black to Dark
   ];
 
   static const Duration shortAnimationDuration = Duration(milliseconds: 200);
@@ -180,19 +196,19 @@ class AppStyles {
     fillColor: Colors.white,
     border: OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
-      borderSide: BorderSide(color: Color(0xFFDDDDDD)),
+      borderSide: BorderSide(color: Color(0xFFE0E0E0), width: 1.5),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
-      borderSide: BorderSide(color: Color(0xFFDDDDDD)),
+      borderSide: BorderSide(color: Color(0xFFE0E0E0), width: 1.5),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
-      borderSide: BorderSide(color: primaryColor, width: 2),
+      borderSide: BorderSide(color: primaryColor, width: 2.5),
     ),
     errorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
-      borderSide: BorderSide(color: errorColor),
+      borderSide: BorderSide(color: Color(0xFF1A1A1A), width: 1.5),
     ),
     contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
   );
@@ -206,15 +222,23 @@ class AppStyles {
       hintText: hintText,
       errorText: errorText,
       filled: true,
-      fillColor: Colors.grey[100],
+      fillColor: Color(0xFFFAFAFA),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(borderRadiusMedium),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: Color(0xFFE0E0E0), width: 1.5),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadiusMedium),
+        borderSide: BorderSide(color: Color(0xFFE0E0E0), width: 1.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(borderRadiusMedium),
+        borderSide: BorderSide(color: primaryColor, width: 2.5),
       ),
       prefixIcon: prefixIcon != null
           ? Icon(prefixIcon, color: primaryColor)
           : null,
-      errorStyle: const TextStyle(color: secondaryColor),
+      errorStyle: const TextStyle(color: Color(0xFF1A1A1A)),
     );
   }
 }
