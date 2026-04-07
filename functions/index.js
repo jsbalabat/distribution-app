@@ -68,9 +68,233 @@ async function getAuditLogRetentionDays() {
   }
 }
 
+/**
+ * Verifies that the calling user is an admin user.
+ * @param {string} uid Firebase Auth UID.
+ * @return {Promise<boolean>} Whether the user is an admin.
+ */
+async function isAdminUser(uid) {
+  if (!uid) {
+    return false;
+  }
+
+  const userDoc = await db.collection("users").doc(uid).get();
+  return userDoc.exists && userDoc.data().role === "admin";
+}
+
+/**
+ * Parses and validates workbook sheets used for customer import.
+ * @param {xlsx.WorkBook} workbook Parsed xlsx workbook.
+ * @return {{data: object[], data2: object[], data3: object[], data4: object[]}} Parsed rows per sheet.
+ */
+function parseWorkbookData(workbook) {
+  const sheetName = "customer master";
+  const sheetName2 = "acct recble";
+  const sheetName3 = "item master";
+  const sheetName4 = "items available";
+
+  const sheet = workbook.Sheets[sheetName];
+  const sheet2 = workbook.Sheets[sheetName2];
+  const sheet3 = workbook.Sheets[sheetName3];
+  const sheet4 = workbook.Sheets[sheetName4];
+
+  if (!sheet || !sheet2 || !sheet3 || !sheet4) {
+    throw new Error("Required sheets not found in the import workbook");
+  }
+
+  const options = {header: 1};
+  const rows = xlsx.utils.sheet_to_json(sheet, options);
+  const rows2 = xlsx.utils.sheet_to_json(sheet2, options);
+  const rows3 = xlsx.utils.sheet_to_json(sheet3, options);
+  const rows4 = xlsx.utils.sheet_to_json(sheet4, options);
+
+  if (rows.length < 2 || rows2.length < 2 || rows3.length < 2 || rows4.length < 2) {
+    throw new Error("One or more sheets do not contain expected headers and data.");
+  }
+
+  const headers = rows[1];
+  const dataRows = rows.slice(2);
+  const headers2 = rows2[1];
+  const dataRows2 = rows2.slice(2);
+  const headers3 = rows3[1];
+  const dataRows3 = rows3.slice(2);
+  const headers4 = rows4[1];
+  const dataRows4 = rows4.slice(2);
+
+  const data = dataRows.map((row) => {
+    const obj = {};
+    headers.forEach((header, i) => {
+      if (header) obj[header.toString().trim()] = row[i];
+    });
+    return obj;
+  });
+
+  const data2 = dataRows2.map((row2) => {
+    const obj = {};
+    headers2.forEach((header, i) => {
+      if (header) obj[header.toString().trim()] = row2[i];
+    });
+    return obj;
+  });
+
+  const data3 = dataRows3.map((row3) => {
+    const obj = {};
+    headers3.forEach((header, i) => {
+      if (header) obj[header.toString().trim()] = row3[i];
+    });
+    return obj;
+  });
+
+  const data4 = dataRows4.map((row4) => {
+    const obj = {};
+    headers4.forEach((header, i) => {
+      if (header) obj[header.toString().trim()] = row4[i];
+    });
+    return obj;
+  });
+
+  return {data, data2, data3, data4};
+}
+
+/**
+ * Writes parsed import rows into Firestore in batched chunks.
+ * @param {{data: object[], data2: object[], data3: object[], data4: object[]}} parsed Parsed workbook rows.
+ * @return {Promise<object>} Insert summary by collection.
+ */
+async function importParsedWorkbookData(parsed) {
+  let batch = db.batch();
+  let operations = 0;
+
+  const summary = {
+    customers: 0,
+    accountReceivable: 0,
+    itemMaster: 0,
+    itemsAvailable: 0,
+  };
+
+  /**
+   * Commits current batch when threshold is reached or forced.
+   * @param {boolean} force Whether to force commit regardless of operation count.
+   * @return {Promise<void>}
+   */
+  async function flushBatchIfNeeded(force = false) {
+    if (operations === 0) return;
+    if (!force && operations < 450) return;
+    await batch.commit();
+    batch = db.batch();
+    operations = 0;
+  }
+
+  /**
+   * Adds a single document write into the current import batch.
+   * @param {string} collectionName Target Firestore collection.
+   * @param {object} payload Document payload to insert.
+   * @return {Promise<void>}
+   */
+  async function addDoc(collectionName, payload) {
+    const ref = db.collection(collectionName).doc();
+    batch.set(ref, {
+      ...payload,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    operations += 1;
+    summary[collectionName] += 1;
+    await flushBatchIfNeeded();
+  }
+
+  for (const row of parsed.data) {
+    const name = row.name || row.Name || row["Customer Name"];
+    if (!name) continue;
+
+    const creditLimit = parseFloat(row.creditLimit || row["Credit Limit"] || 0);
+    const accountNumber = row.accountNumber || row["Account Number"] || "";
+    const postalAddress = row.postalAddress || row["Postal Address"] || "";
+    const paymentTerms = row.paymentTerms || row["Pmt. Terms"] || "";
+    const priceLevel = row.priceLevel || row["Price Level"] || "";
+    const deliveryRoute = row.deliveryRoute || row["Delivery Route"] || "";
+    const area = row.area || row["Area"] || "";
+
+    await addDoc("customers", {
+      name: name.toString().trim(),
+      creditLimit,
+      accountNumber: accountNumber.toString().trim(),
+      postalAddress: postalAddress.toString().trim(),
+      paymentTerms: paymentTerms.toString().trim(),
+      priceLevel: priceLevel.toString().trim(),
+      deliveryRoute: deliveryRoute.toString().trim(),
+      area: area.toString().trim(),
+    });
+  }
+
+  for (const row2 of parsed.data2) {
+    const name = row2.name || row2.Name || row2["Customer"];
+    if (!name) continue;
+
+    const accountNumber = row2.accountNumber || row2["Customer ID"] || "";
+    const amountDue = parseFloat(row2.amountDue || row2["Amount Due"] || 0);
+    const overThirtyDays = parseFloat(row2.overThirtyDays || row2["Over 30 Days"] || 0);
+    const unsecured = parseFloat(row2.unsecured || row2["Unsecured"] || 0);
+
+    await addDoc("accountReceivable", {
+      name: name.toString().trim(),
+      accountNumber: accountNumber.toString().trim(),
+      amountDue,
+      overThirtyDays,
+      unsecured,
+    });
+  }
+
+  for (const row3 of parsed.data3) {
+    const productGroup = row3.productGroup || row3["Product Group"] || "";
+    if (!productGroup) continue;
+
+    const description = row3.description || row3.Description || row3["Description"];
+    const itemCode = row3.itemCode || row3["Item Code"] || "";
+    const itemType = row3.itemType || row3["ITEM TYPE"] || "";
+    const conversionFactor = parseFloat(row3.conversionFactor || row3["CONVERSION FACTOR"] || 0);
+    const regularPrice = parseFloat(row3.regular || row3["REGULAR"] || 0);
+    const rmlInclusivePrice = parseFloat(row3["RML INCLUSIVE"] || 0);
+    const specialOD = parseFloat(row3["SPECIAL OD"] || 0);
+
+    await addDoc("itemMaster", {
+      productGroup: productGroup.toString().trim(),
+      description: (description || "").toString().trim(),
+      itemCode: itemCode.toString().trim(),
+      conversionFactor,
+      regularPrice,
+      rmlInclusivePrice,
+      specialOD,
+      itemType: itemType.toString().trim(),
+    });
+  }
+
+  for (const row4 of parsed.data4) {
+    const date = row4.date || row4.Date || row4["Date"] || "";
+    if (!date) continue;
+
+    const area = row4.area || row4.Area || row4["Area"] || "";
+    const productGroup = row4.productGroup || row4["Product Group"] || "";
+    const itemCode = row4.itemCode || row4["Item Code"] || "";
+    const description = row4.description || row4.Description || row4["Description"];
+    const quantity = parseFloat(row4.quantity || row4.Quantity || row4["NET QTY AVAILABLE FOR SALE"] || 0);
+
+    await addDoc("itemsAvailable", {
+      date: date.toString().trim(),
+      area: area.toString().trim(),
+      productGroup: productGroup.toString().trim(),
+      itemCode: itemCode.toString().trim(),
+      description: (description || "").toString().trim(),
+      quantity,
+    });
+  }
+
+  await flushBatchIfNeeded(true);
+  return summary;
+}
+
 // ========================================
 // SCHEDULED CLEANUP FUNCTION - Runs Daily at Midnight
-// Deletes ALL data except users and logs
+// Prunes old operational records while preserving live data
 // ========================================
 
 exports.deleteAllDataExceptUsersAndLogs = onSchedule(
@@ -80,88 +304,69 @@ exports.deleteAllDataExceptUsersAndLogs = onSchedule(
       memory: "512MiB",
     },
     async (event) => {
-      console.log("Starting complete database cleanup at midnight...");
+      console.log("Starting scheduled maintenance cleanup at midnight...");
 
       try {
         const now = admin.firestore.Timestamp.now();
         let totalDeleted = 0;
         const deletionDetails = {};
 
-        // Collections to DELETE COMPLETELY
-        const collectionsToDelete = [
+        const retentionDays = Number(process.env.MAINTENANCE_RETENTION_DAYS || 30);
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+        const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
+
+        // Collections to prune when they age out.
+        const collectionsToPrune = [
+          {name: "dataImports", field: "requestedAt"},
+          {name: "cleanupLogs", field: "executedAt"},
+        ];
+
+        // Collections to PRESERVE (never delete)
+        const preservedCollections = [
           "customers",
           "accountReceivable",
           "itemMaster",
           "itemsAvailable",
           "salesRequisitions",
-          "dataImports",
-        ];
-
-        // Collections to PRESERVE (never delete)
-        const preservedCollections = [
           "users",
-          "cleanupLogs",
           "emailLogs",
+          "auditLogs",
+          "notifications",
         ];
 
-        console.log(`Collections to delete: ${collectionsToDelete.join(", ")}`);
+        console.log(`Retention days: ${retentionDays}`);
+        console.log(`Collections to prune: ${collectionsToPrune.map((item) => item.name).join(", ")}`);
         console.log(`Protected collections: ${preservedCollections.join(", ")}`);
 
-        // Delete all documents from each collection
-        for (const collectionName of collectionsToDelete) {
-          let collectionDeleted = 0;
-          let hasMore = true;
+        for (const collectionConfig of collectionsToPrune) {
+          console.log(`Processing collection: ${collectionConfig.name}`);
+          const query = db
+              .collection(collectionConfig.name)
+              .where(collectionConfig.field, "<", cutoffTimestamp)
+              .limit(500);
 
-          console.log(`Processing collection: ${collectionName}`);
+          const collectionDeleted = await deleteInBatches(query);
+          deletionDetails[collectionConfig.name] = collectionDeleted;
+          totalDeleted += collectionDeleted;
 
-          while (hasMore) {
-            // Get documents in batches
-            const snapshot = await db.collection(collectionName)
-                .limit(500) // Process in batches of 500
-                .get();
-
-            if (snapshot.empty) {
-              console.log(`Collection ${collectionName} is empty or fully cleaned`);
-              hasMore = false;
-              break;
-            }
-
-            const batch = db.batch();
-            let batchCount = 0;
-
-            snapshot.docs.forEach((doc) => {
-              batch.delete(doc.ref);
-              batchCount++;
-            });
-
-            await batch.commit();
-            collectionDeleted += batchCount;
-            totalDeleted += batchCount;
-
-            console.log(`  Deleted ${batchCount} documents from ${collectionName} (Total: ${collectionDeleted})`);
-
-            // If we got less than 500, we're done with this collection
-            if (snapshot.size < 500) {
-              hasMore = false;
-            }
-          }
-
-          deletionDetails[collectionName] = collectionDeleted;
+          console.log(`  Deleted ${collectionDeleted} documents from ${collectionConfig.name}`);
         }
 
         // Log cleanup operation with detailed breakdown
         await db.collection("cleanupLogs").add({
           executedAt: now,
-          type: "complete_cleanup",
+          type: "scheduled_maintenance",
           totalDocumentsDeleted: totalDeleted,
           deletionDetails: deletionDetails,
           preservedCollections: preservedCollections,
-          deletedCollections: collectionsToDelete,
+          deletedCollections: collectionsToPrune.map((item) => item.name),
+          retentionDays: retentionDays,
           status: "success",
-          message: `Complete cleanup: ${totalDeleted} documents deleted from ${collectionsToDelete.length} collections`,
+          message: `Maintenance cleanup: ${totalDeleted} old documents deleted from ${collectionsToPrune.length} collections`,
         });
 
-        console.log(`Complete cleanup finished: ${totalDeleted} total documents deleted`);
+        console.log(`Maintenance cleanup finished: ${totalDeleted} total documents deleted`);
         console.log("Deletion breakdown:", deletionDetails);
 
         return {
@@ -169,13 +374,14 @@ exports.deleteAllDataExceptUsersAndLogs = onSchedule(
           totalDeleted: totalDeleted,
           details: deletionDetails,
           preserved: preservedCollections,
+          retentionDays: retentionDays,
         };
       } catch (error) {
-        console.error("Complete cleanup failed:", error);
+        console.error("Maintenance cleanup failed:", error);
 
         await db.collection("cleanupLogs").add({
           executedAt: admin.firestore.Timestamp.now(),
-          type: "complete_cleanup",
+          type: "scheduled_maintenance",
           status: "failed",
           error: error.message,
           errorStack: error.stack,
@@ -245,6 +451,178 @@ exports.pruneAuditLogs = onSchedule(
         });
 
         throw error;
+      }
+    },
+);
+
+// ========================================
+// DESTRUCTIVE CLEANUP FUNCTION - Admin triggered only
+// Deletes live business data on explicit confirmation
+// ========================================
+
+exports.runDestructiveCleanup = onCall(
+    {
+      timeoutSeconds: 540,
+      memory: "512MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in to run cleanup.");
+      }
+
+      const callerUid = request.auth.uid;
+      const isAdmin = await isAdminUser(callerUid);
+      if (!isAdmin) {
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const confirmText = (request.data && request.data.confirmText) || "";
+      if (confirmText !== "DELETE") {
+        throw new HttpsError(
+            "invalid-argument",
+            "Confirmation text must be \"DELETE\".",
+        );
+      }
+
+      const reason = (request.data && request.data.reason) || "manual admin cleanup";
+      const collectionsToDelete = [
+        "customers",
+        "accountReceivable",
+        "itemMaster",
+        "itemsAvailable",
+        "salesRequisitions",
+        "dataImports",
+        "notifications",
+      ];
+
+      try {
+        const deletionDetails = {};
+        let totalDeleted = 0;
+
+        for (const collectionName of collectionsToDelete) {
+          const deletedCount = await deleteInBatches(
+              db.collection(collectionName).limit(500),
+          );
+          deletionDetails[collectionName] = deletedCount;
+          totalDeleted += deletedCount;
+        }
+
+        await db.collection("cleanupLogs").add({
+          executedAt: admin.firestore.Timestamp.now(),
+          type: "destructive_cleanup",
+          status: "success",
+          triggeredBy: callerUid,
+          reason: reason,
+          deletedCollections: collectionsToDelete,
+          deletionDetails: deletionDetails,
+          totalDocumentsDeleted: totalDeleted,
+          message: `Destructive cleanup deleted ${totalDeleted} documents from ${collectionsToDelete.length} collections`,
+        });
+
+        return {
+          success: true,
+          totalDeleted: totalDeleted,
+          deletedCollections: collectionsToDelete,
+          details: deletionDetails,
+        };
+      } catch (error) {
+        await db.collection("cleanupLogs").add({
+          executedAt: admin.firestore.Timestamp.now(),
+          type: "destructive_cleanup",
+          status: "failed",
+          triggeredBy: callerUid,
+          reason: reason,
+          error: error.message,
+          errorStack: error.stack,
+        });
+
+        throw new HttpsError(
+            "internal",
+            `Destructive cleanup failed: ${error.message}`,
+        );
+      }
+    },
+);
+
+// ========================================
+// DIRECT EXCEL IMPORT - Admin upload via callable
+// ========================================
+
+exports.importDataFromExcelDirect = onCall(
+    {
+      timeoutSeconds: 540,
+      memory: "1GiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in to import data.");
+      }
+
+      const callerUid = request.auth.uid;
+      console.log(`[IMPORT][DIRECT] Request received from uid=${callerUid}`);
+      const isAdmin = await isAdminUser(callerUid);
+      if (!isAdmin) {
+        console.warn(`[IMPORT][DIRECT] Permission denied for uid=${callerUid}`);
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const fileName = (request.data && request.data.fileName) || "upload.xlsx";
+      const fileBase64 = (request.data && request.data.fileBase64) || "";
+
+      if (!fileBase64) {
+        throw new HttpsError("invalid-argument", "Missing file content.");
+      }
+
+      try {
+        const fileBuffer = Buffer.from(fileBase64, "base64");
+        console.log(`[IMPORT][DIRECT] Decoded file ${fileName} (${fileBuffer.length} bytes)`);
+        if (fileBuffer.length === 0) {
+          throw new HttpsError("invalid-argument", "Uploaded file is empty.");
+        }
+
+        const maxBytes = 8 * 1024 * 1024;
+        if (fileBuffer.length > maxBytes) {
+          throw new HttpsError(
+              "invalid-argument",
+              "Uploaded file is too large. Please keep it under 8 MB.",
+          );
+        }
+
+        const workbook = xlsx.read(fileBuffer, {type: "buffer"});
+        const parsed = parseWorkbookData(workbook);
+    console.log(
+      `[IMPORT][DIRECT] Parsed workbook rows: ` +
+      `customer master=${parsed.data.length}, acct recble=${parsed.data2.length}, ` +
+      `item master=${parsed.data3.length}, items available=${parsed.data4.length}`,
+    );
+
+        const summary = await importParsedWorkbookData(parsed);
+    console.log(`[IMPORT][DIRECT] Firestore write summary: ${JSON.stringify(summary)}`);
+
+        await db.collection("dataImports").add({
+          status: "completed",
+          source: "directUpload",
+          fileName: fileName,
+          requestedByUid: callerUid,
+          requestedByEmail: request.auth.token.email || "unknown",
+          requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          summary: summary,
+        });
+
+        console.log(`[IMPORT][DIRECT] Import completed successfully for ${fileName}`);
+
+        return {
+          success: true,
+          message: "Import completed successfully.",
+          summary: summary,
+        };
+      } catch (error) {
+        console.error(`[IMPORT][DIRECT] Import failed for ${fileName}:`, error);
+        throw new HttpsError(
+            "internal",
+            `Direct upload import failed: ${error.message}`,
+        );
       }
     },
 );
@@ -440,204 +818,68 @@ exports.importDataFromExcelV2 = onDocumentCreated(
         startedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
+      console.log(
+          `[IMPORT][STORAGE] Processing importId=${snapshot.id}, requestedBy=${snapshot.data().requestedBy || "unknown"}`,
+      );
+
       try {
-        const bucketName = process.env.FIREBASE_STORAGE_BUCKET || "sales-field-app-f31a2.firebasestorage.app";
-        const filePathInBucket = "data_files/document_file.xlsx";
+        const bucketName = process.env.FIREBASE_STORAGE_BUCKET || admin.storage().bucket().name;
         const tempFilePath = path.join(os.tmpdir(), "document_file.xlsx");
 
-        await storage.bucket(bucketName).file(filePathInBucket).download({destination: tempFilePath});
+        const candidatePaths = [
+          snapshot.data().filePathInBucket,
+          process.env.CUSTOMER_IMPORT_FILE_PATH,
+          "data_files/document_file.xlsx",
+          "document_file.xlsx",
+        ].filter(Boolean);
+
+        let downloaded = false;
+
+        for (const filePathInBucket of candidatePaths) {
+          try {
+            console.log(`Downloading customer import from gs://${bucketName}/${filePathInBucket}`);
+            await storage.bucket(bucketName).file(filePathInBucket).download({destination: tempFilePath});
+            downloaded = true;
+            break;
+          } catch (downloadError) {
+            console.warn(
+                `Unable to download import file from gs://${bucketName}/${filePathInBucket}: ${downloadError.message}`,
+            );
+          }
+        }
+
+        if (!downloaded) {
+          throw new Error(
+              `Customer import workbook not found in bucket ${bucketName}. ` +
+              `Checked paths: ${candidatePaths.join(", ")}`,
+          );
+        }
 
         const workbook = xlsx.readFile(tempFilePath);
-        const sheetName = "customer master";
-        const sheetName2 = "acct recble";
-        const sheetName3 = "item master";
-        const sheetName4 = "items available";
+        const parsed = parseWorkbookData(workbook);
+        console.log(
+          `[IMPORT][STORAGE] Parsed workbook rows: ` +
+          `customer master=${parsed.data.length}, acct recble=${parsed.data2.length}, ` +
+          `item master=${parsed.data3.length}, items available=${parsed.data4.length}`,
+        );
 
-        const sheet = workbook.Sheets[sheetName];
-        const sheet2 = workbook.Sheets[sheetName2];
-        const sheet3 = workbook.Sheets[sheetName3];
-        const sheet4 = workbook.Sheets[sheetName4];
-
-        if (!sheet && !sheet2 && !sheet3 && !sheet4) {
-          throw new Error("Sheets not found in customers.xlsx");
-        }
-
-        const options = {header: 1};
-        const rows = xlsx.utils.sheet_to_json(sheet, options);
-        const rows2 = xlsx.utils.sheet_to_json(sheet2, options);
-        const rows3 = xlsx.utils.sheet_to_json(sheet3, options);
-        const rows4 = xlsx.utils.sheet_to_json(sheet4, options);
-
-        if (rows.length < 2) {
-          throw new Error("Sheet does not contain expected headers and data.");
-        }
-
-        const headers = rows[1];
-        const dataRows = rows.slice(2);
-        const headers2 = rows2[1];
-        const dataRows2 = rows2.slice(2);
-        const headers3 = rows3[1];
-        const dataRows3 = rows3.slice(2);
-        const headers4 = rows4[1];
-        const dataRows4 = rows4.slice(2);
-
-        const data = dataRows.map((row) => {
-          const obj = {};
-          headers.forEach((header, i) => {
-            if (header) obj[header.toString().trim()] = row[i];
-          });
-          return obj;
-        });
-
-        const data2 = dataRows2.map((row2) => {
-          const obj = {};
-          headers2.forEach((header, i) => {
-            if (header) obj[header.toString().trim()] = row2[i];
-          });
-          return obj;
-        });
-
-        const data3 = dataRows3.map((row3) => {
-          const obj = {};
-          headers3.forEach((header, i) => {
-            if (header) obj[header.toString().trim()] = row3[i];
-          });
-          return obj;
-        });
-
-        const data4 = dataRows4.map((row4) => {
-          const obj = {};
-          headers4.forEach((header, i) => {
-            if (header) obj[header.toString().trim()] = row4[i];
-          });
-          return obj;
-        });
-
-        // Calculate expiration date (next day at midnight)
-        const expirationDate = new Date();
-        expirationDate.setDate(expirationDate.getDate() + 1);
-        expirationDate.setHours(0, 0, 0, 0);
-        const expiresAt = admin.firestore.Timestamp.fromDate(expirationDate);
-
-        const batch = db.batch();
-        const customersRef = db.collection("customers");
-        const acctRcble = db.collection("accountReceivable");
-        const itemMaster = db.collection("itemMaster");
-        const itemsAvailable = db.collection("itemsAvailable");
-
-        data.forEach((row) => {
-          const name = row.name || row.Name || row["Customer Name"];
-          const creditLimit = parseFloat(row.creditLimit || row["Credit Limit"] || 0);
-          const accountNumber = row.accountNumber || row["Account Number"] || "";
-          const postalAddress = row.postalAddress || row["Postal Address"] || "";
-          const paymentTerms = row.paymentTerms || row["Pmt. Terms"] || "";
-          const priceLevel = row.priceLevel || row["Price Level"] || "";
-          const deliveryRoute = row.deliveryRoute || row["Delivery Route"] || "";
-          const area = row.area || row["Area"] || "";
-
-          if (!name) return;
-
-          const docRef = customersRef.doc();
-          batch.set(docRef, {
-            name: name.trim(),
-            creditLimit,
-            accountNumber: accountNumber.toString().trim(),
-            postalAddress: postalAddress.toString().trim(),
-            paymentTerms: paymentTerms.toString().trim(),
-            priceLevel: priceLevel.toString().trim(),
-            deliveryRoute: deliveryRoute.toString().trim(),
-            area: area.toString().trim(),
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: expiresAt, // Add TTL field
-          });
-        });
-
-        data2.forEach((row2) => {
-          const name = row2.name || row2.Name || row2["Customer"];
-          const accountNumber = row2.accountNumber || row2["Customer ID"] || "";
-          const amountDue = parseFloat(row2.amountDue || row2["Amount Due"] || 0);
-          const overThirtyDays = parseFloat(row2.overThirtyDays || row2["Over 30 Days"] || 0);
-          const unsecured = parseFloat(row2.unsecured || row2["Unsecured"] || 0);
-
-          if (!name) return;
-
-          const docRef2 = acctRcble.doc();
-          batch.set(docRef2, {
-            name: name.trim(),
-            accountNumber: accountNumber.toString().trim(),
-            amountDue,
-            overThirtyDays,
-            unsecured,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: expiresAt, // Add TTL field
-          });
-        });
-
-        data3.forEach((row3) => {
-          const productGroup = row3.productGroup || row3["Product Group"] || "";
-          const description = row3.description || row3.Description || row3["Description"];
-          const itemCode = row3.itemCode || row3["Item Code"] || "";
-          const itemType = row3.itemType || row3["ITEM TYPE"] || "";
-          const conversionFactor = parseFloat(row3.conversionFactor || row3["CONVERSION FACTOR"] || 0);
-          const regularPrice = parseFloat(row3.regular || row3["REGULAR"] || 0);
-          const rmlInclusivePrice = parseFloat(row3["RML INCLUSIVE"] || 0);
-          const specialOD = parseFloat(row3["SPECIAL OD"] || 0);
-
-          if (!productGroup) return;
-
-          const docRef3 = itemMaster.doc();
-          batch.set(docRef3, {
-            productGroup: productGroup.toString().trim(),
-            description: description.toString().trim(),
-            itemCode: itemCode.toString().trim(),
-            conversionFactor,
-            regularPrice,
-            rmlInclusivePrice,
-            specialOD,
-            itemType: itemType.toString().trim(),
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: expiresAt, // Add TTL field
-          });
-        });
-
-        data4.forEach((row4) => {
-          const date = row4.date || row4.Date || row4["Date"] || "";
-          const area = row4.area || row4.Area || row4["Area"] || "";
-          const productGroup = row4.productGroup || row4["Product Group"] || "";
-          const itemCode = row4.itemCode || row4["Item Code"] || "";
-          const description = row4.description || row4.Description || row4["Description"];
-          const quantity = parseFloat(row4.quantity || row4.Quantity || row4["NET QTY AVAILABLE FOR SALE"] || 0);
-
-          if (!date) return;
-
-          const docRef4 = itemsAvailable.doc();
-          batch.set(docRef4, {
-            date: date.toString().trim(),
-            area: area.toString().trim(),
-            productGroup: productGroup.toString().trim(),
-            itemCode: itemCode.toString().trim(),
-            description: description.toString().trim(),
-            quantity,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: expiresAt, // Add TTL field
-          });
-        });
-
-        await batch.commit();
+        const summary = await importParsedWorkbookData(parsed);
+        console.log(`[IMPORT][STORAGE] Firestore write summary: ${JSON.stringify(summary)}`);
 
         await snapshot.ref.update({
           status: "completed",
           completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          summary: summary,
         });
 
-        console.log("Data import completed successfully");
+        console.log(`[IMPORT][STORAGE] Import completed successfully for importId=${snapshot.id}`);
       } catch (error) {
         await snapshot.ref.update({
           status: "error",
           error: error.message,
           failedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-        console.error("Import failed:", error);
+        console.error(`[IMPORT][STORAGE] Import failed for importId=${snapshot.id}:`, error);
       }
     },
 );

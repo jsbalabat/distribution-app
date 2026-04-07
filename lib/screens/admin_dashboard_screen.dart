@@ -1,14 +1,18 @@
 // lib/screens/admin_dashboard_screen.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../styles/app_styles.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/app_logger.dart';
 import 'manage_users_screen.dart';
 import 'view_reports_screen.dart';
 import 'settings_screen.dart';
 import 'audit_logs_screen.dart';
 import 'notifications_screen.dart';
+import '../utils/excel_file_picker.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -18,6 +22,79 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  Future<void> _runDestructiveCleanup(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppStyles.borderRadiusMedium),
+          ),
+          title: const Text('Confirm destructive cleanup'),
+          content: const Text(
+            'This will permanently delete customers, inventory, requisitions, import requests, and notifications. Type DELETE in the prompt sent to the function and press Run only if you are certain.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppStyles.errorColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Run cleanup'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Running destructive cleanup...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'runDestructiveCleanup',
+      );
+      final result = await callable.call(<String, dynamic>{
+        'confirmText': 'DELETE',
+        'reason': 'Triggered from admin dashboard',
+      });
+
+      if (!context.mounted) return;
+      final data = Map<String, dynamic>.from(result.data as Map);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cleanup completed. Deleted ${data['totalDeleted'] ?? 0} documents.',
+          ),
+          backgroundColor: AppStyles.successColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cleanup failed: $error'),
+          backgroundColor: AppStyles.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   void _showLogoutConfirmation(
     BuildContext context,
     UserProvider userProvider,
@@ -264,37 +341,143 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                     _buildActionCard(
                       label: 'Upload Customers',
-                      subtitle: 'Import customer data',
+                      subtitle: 'Upload and import Excel workbook',
                       icon: Icons.upload_file_outlined,
                       onTap: () async {
+                        AppLogger.info(
+                          '[IMPORT][UI] Admin initiated customer workbook picker',
+                          tag: 'IMPORT',
+                        );
+
+                        PickedExcelFile? pickedFile;
+                        try {
+                          pickedFile = await pickExcelFile();
+                        } catch (e, st) {
+                          AppLogger.error(
+                            '[IMPORT][UI] File picker failed to read selected file',
+                            error: e,
+                            stackTrace: st,
+                            tag: 'IMPORT',
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Unable to read selected file: $e'),
+                              backgroundColor: AppStyles.errorColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (pickedFile == null) {
+                          AppLogger.warning(
+                            '[IMPORT][UI] File picker cancelled by user',
+                            tag: 'IMPORT',
+                          );
+                          return;
+                        }
+
+                        final bytes = pickedFile.bytes;
+                        AppLogger.info(
+                          '[IMPORT][UI] Selected file: ${pickedFile.name} (${bytes.length} bytes)',
+                          tag: 'IMPORT',
+                        );
+
+                        if (bytes.isEmpty) {
+                          AppLogger.warning(
+                            '[IMPORT][UI] Selected file had no readable bytes',
+                            tag: 'IMPORT',
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Selected file could not be read.'),
+                              backgroundColor: AppStyles.errorColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        const maxUploadBytes = 8 * 1024 * 1024;
+                        if (bytes.length > maxUploadBytes) {
+                          AppLogger.warning(
+                            '[IMPORT][UI] File too large: ${bytes.length} bytes (limit: $maxUploadBytes)',
+                            tag: 'IMPORT',
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'File too large. Please keep the Excel file under 8 MB.',
+                              ),
+                              backgroundColor: AppStyles.errorColor,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (!context.mounted) return;
+
+                        AppLogger.info(
+                          '[IMPORT][UI] Uploading ${pickedFile.name} to callable importDataFromExcelDirect',
+                          tag: 'IMPORT',
+                        );
+
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: const Text('Starting upload...'),
+                            content: Text('Uploading ${pickedFile.name}...'),
                             backgroundColor: AppStyles.infoColor,
                             behavior: SnackBarBehavior.floating,
                           ),
                         );
+
                         try {
-                          await FirebaseFirestore.instance
-                              .collection('dataImports')
-                              .add({
-                                'requestedAt': FieldValue.serverTimestamp(),
-                                'status': 'pending',
-                                'requestedBy':
-                                    userProvider.currentUser?.email ??
-                                    'unknown',
-                              });
+                          final callable = FirebaseFunctions.instance
+                              .httpsCallable('importDataFromExcelDirect');
+                          final result = await callable.call(<String, dynamic>{
+                            'fileName': pickedFile.name,
+                            'fileBase64': base64Encode(bytes),
+                          });
+
                           if (!context.mounted) return;
+
+                          final data = Map<String, dynamic>.from(
+                            result.data as Map,
+                          );
+                          final summary = Map<String, dynamic>.from(
+                            data['summary'] as Map? ?? <String, dynamic>{},
+                          );
+
+                          AppLogger.info(
+                            '[IMPORT][UI] Upload succeeded. Summary: customers=${summary['customers'] ?? 0}, '
+                            'accountReceivable=${summary['accountReceivable'] ?? 0}, '
+                            'itemMaster=${summary['itemMaster'] ?? 0}, '
+                            'itemsAvailable=${summary['itemsAvailable'] ?? 0}',
+                            tag: 'IMPORT',
+                          );
+
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: const Text(
-                                'Import triggered! Check status in Firestore.',
+                              content: Text(
+                                'Import completed: '
+                                '${summary['customers'] ?? 0} customers, '
+                                '${summary['accountReceivable'] ?? 0} receivables, '
+                                '${summary['itemMaster'] ?? 0} item master rows, '
+                                '${summary['itemsAvailable'] ?? 0} available item rows.',
                               ),
                               backgroundColor: AppStyles.successColor,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
                         } catch (e) {
+                          AppLogger.error(
+                            '[IMPORT][UI] Upload failed via callable importDataFromExcelDirect',
+                            error: e,
+                            tag: 'IMPORT',
+                          );
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -305,6 +488,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           );
                         }
                       },
+                    ),
+                    const SizedBox(height: AppStyles.spacingS),
+
+                    _buildActionCard(
+                      label: 'Destructive Cleanup',
+                      subtitle: 'Permanently remove live data collections',
+                      icon: Icons.delete_forever_outlined,
+                      onTap: () => _runDestructiveCleanup(context),
                     ),
                     const SizedBox(height: AppStyles.spacingS),
 

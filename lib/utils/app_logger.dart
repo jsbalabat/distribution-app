@@ -4,10 +4,18 @@ import 'package:flutter/foundation.dart';
 class AppLogger {
   static void info(String message, {String tag = 'APP'}) {
     developer.log(message, name: tag, level: 800);
+
+    if (kDebugMode) {
+      debugPrint('[$tag] $message');
+    }
   }
 
   static void warning(String message, {String tag = 'APP'}) {
     developer.log(message, name: tag, level: 900);
+
+    if (kDebugMode) {
+      debugPrint('[$tag] $message');
+    }
   }
 
   static void error(
