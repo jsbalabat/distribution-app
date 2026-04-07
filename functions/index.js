@@ -16,43 +16,58 @@ const storage = new Storage();
 
 // ========================================
 // SCHEDULED CLEANUP FUNCTION - Runs Daily at Midnight
+// Deletes ALL data except users and logs
 // ========================================
 
-exports.cleanupExpiredDocuments = onSchedule(
+exports.deleteAllDataExceptUsersAndLogs = onSchedule(
     {
       schedule: "0 0 * * *", // Runs at 00:00 (midnight) every day
       timeZone: "Asia/Manila", // Change to your timezone
-      memory: "256MiB",
+      memory: "512MiB",
     },
     async (event) => {
-      console.log("🗑️ Starting daily cleanup at midnight...");
+      console.log("Starting complete database cleanup at midnight...");
 
       try {
         const now = admin.firestore.Timestamp.now();
         let totalDeleted = 0;
+        const deletionDetails = {};
 
-        // Collections to clean up
-        const collectionsToClean = [
+        // Collections to DELETE COMPLETELY
+        const collectionsToDelete = [
           "customers",
           "accountReceivable",
           "itemMaster",
           "itemsAvailable",
           "salesRequisitions",
+          "dataImports",
+        ];
+
+        // Collections to PRESERVE (never delete)
+        const preservedCollections = [
+          "users",
+          "cleanupLogs",
           "emailLogs",
         ];
 
-        // Delete documents from each collection where expiresAt <= now
-        for (const collectionName of collectionsToClean) {
+        console.log(`Collections to delete: ${collectionsToDelete.join(", ")}`);
+        console.log(`Protected collections: ${preservedCollections.join(", ")}`);
+
+        // Delete all documents from each collection
+        for (const collectionName of collectionsToDelete) {
+          let collectionDeleted = 0;
           let hasMore = true;
 
+          console.log(`Processing collection: ${collectionName}`);
+
           while (hasMore) {
+            // Get documents in batches
             const snapshot = await db.collection(collectionName)
-                .where("expiresAt", "<=", now)
                 .limit(500) // Process in batches of 500
                 .get();
 
             if (snapshot.empty) {
-              console.log(`✓ No expired documents in ${collectionName}`);
+              console.log(`Collection ${collectionName} is empty or fully cleaned`);
               hasMore = false;
               break;
             }
@@ -66,36 +81,47 @@ exports.cleanupExpiredDocuments = onSchedule(
             });
 
             await batch.commit();
+            collectionDeleted += batchCount;
             totalDeleted += batchCount;
 
-            console.log(`✓ Deleted ${batchCount} documents from ${collectionName}`);
+            console.log(`  Deleted ${batchCount} documents from ${collectionName} (Total: ${collectionDeleted})`);
 
             // If we got less than 500, we're done with this collection
             if (snapshot.size < 500) {
               hasMore = false;
             }
           }
+
+          deletionDetails[collectionName] = collectionDeleted;
         }
 
-        // Log cleanup operation
+        // Log cleanup operation with detailed breakdown
         await db.collection("cleanupLogs").add({
           executedAt: now,
-          documentsDeleted: totalDeleted,
+          type: "complete_cleanup",
+          totalDocumentsDeleted: totalDeleted,
+          deletionDetails: deletionDetails,
+          preservedCollections: preservedCollections,
+          deletedCollections: collectionsToDelete,
           status: "success",
-          message: `Cleaned up ${totalDeleted} expired documents`,
+          message: `Complete cleanup: ${totalDeleted} documents deleted from ${collectionsToDelete.length} collections`,
         });
 
-        console.log(`Cleanup completed: ${totalDeleted} documents deleted`);
+        console.log(`Complete cleanup finished: ${totalDeleted} total documents deleted`);
+        console.log("Deletion breakdown:", deletionDetails);
 
         return {
           success: true,
-          deletedCount: totalDeleted,
+          totalDeleted: totalDeleted,
+          details: deletionDetails,
+          preserved: preservedCollections,
         };
       } catch (error) {
-        console.error("Cleanup failed:", error);
+        console.error("Complete cleanup failed:", error);
 
         await db.collection("cleanupLogs").add({
           executedAt: admin.firestore.Timestamp.now(),
+          type: "complete_cleanup",
           status: "failed",
           error: error.message,
           errorStack: error.stack,

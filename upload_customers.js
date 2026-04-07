@@ -22,7 +22,7 @@ const sheet4 = workbook.Sheets[sheetName4];
 
 
 if (!sheet && !sheet2 && !sheet3 && !sheet4) {
-  console.error(`❌ Sheets not found in customers.xlsx`);
+  console.error(`Sheets not found in customers.xlsx`);
   process.exit(1);
 }
 
@@ -35,7 +35,7 @@ const rows4 = xlsx.utils.sheet_to_json(sheet4, options);
 
 // Validate we have enough rows
 if (rows.length < 2) {
-  console.error('❌ Sheet does not contain expected headers and data.');
+  console.error('Sheet does not contain expected headers and data.');
   process.exit(1);
 }
 
@@ -194,6 +194,6 @@ const data4 = dataRows4.map((row4) => {
   });
 
   await batch.commit();
-  console.log('✅ Customers from "CUSTOMER LIST" uploaded successfully.');
+  console.log('Customers from "CUSTOMER LIST" uploaded successfully.');
 })();
 
