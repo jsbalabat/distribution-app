@@ -35,12 +35,50 @@ android {
         versionName = "1.0"
     }
 
+    // Add Product Flavors
+    flavorDimensions += "default"
+    
+    // Set default flavor for 'flutter run'
+    variantFilter {
+        if (buildType.name == "debug" && flavors[0].name != "dev") {
+            ignore = true
+        }
+    }
+    
+    productFlavors {
+        create("dev") {
+            dimension = "default"
+            versionNameSuffix = "-dev"
+            // applicationIdSuffix = ".dev"
+        }
+        
+        create("stage") {
+            dimension = "default"
+            versionNameSuffix = "-stage"
+            // applicationIdSuffix = ".stage"
+        }
+        
+        create("prod") {
+            dimension = "default"
+            // No suffix for production
+        }
+    }
+
+    // Add Splits for different architectures
+    splits {
+        abi {
+            isEnable = false
+            reset()
+            include("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-
 }
 
 flutter {

@@ -36,6 +36,7 @@ class _EditQuantityDialogState extends State<EditQuantityDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      backgroundColor: Colors.white,
       title: Text('Edit Quantity: ${widget.itemName}'),
       content: TextField(
         controller: editController,

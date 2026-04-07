@@ -24,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -91,6 +92,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
         ),
@@ -378,12 +380,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        Icon(
-                          Icons.attach_money,
-                          size: 14,
-                          color: Colors.grey[600],
-                        ),
-                        const SizedBox(width: 4),
                         Text(
                           currencyFormat.format(totalAmount),
                           style: const TextStyle(

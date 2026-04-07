@@ -21,10 +21,17 @@ migrate_working_dir/
 *.ipr
 *.iws
 .idea/
+*.orig
+*.rej
+*.iml.backup
 
 # VS Code
 .vscode/
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
 *.code-workspace
+*.vsix
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -106,13 +113,21 @@ serviceAccountKey.json
 # Environment variables and secrets
 .env
 .env.local
+.env.*.local
 .env.production
 .env.development
+.env.staging
 *.key
 *.pem
 *.p12
 *.keystore
 *.jks
+secrets.json
+secrets.yaml
+credentials.json
+api_keys.json
+.aws/
+.gcloud/
 
 # Database
 *.db
@@ -152,10 +167,14 @@ Desktop.ini
 # Backup files
 *.bak
 *.backup
+*.swp~
 
 # Cache directories
 .cache/
 .tmp/
+temp/
+.temp/
+cache/
 
 # Runtime data
 pids
@@ -191,9 +210,67 @@ $RECYCLE.BIN/
 
 # Network Shortcuts
 *.lnk
+.fvm/fvm_config.json
 
-# Flutter version management
-.fvm/
-
+# Local development and debugging
 output.txt
+server.log
+debug.log
+*.log.bak
+.dart_tool/run_vm_tests/
+.packages.bak
+
+# Functions and backend
 functions/.env.yaml
+functions/.env.local
+functions/lib/
+functions/bin/
+functions/test/coverage/
+
+# Build and deployment artifacts
+*.apk
+*.aab
+*.ipa
+*.aar
+.gradle/
+.m2/
+
+# IDE and editor temp files
+*.sublime-workspace
+*.sublime-project
+.DS_Store/
+.AppleDouble/
+.LSOverride/
+
+# Platform specific runtime files
+*.dll
+*.exe
+*.so
+*.dylib
+
+# Credentials and sensitive files (redundant for safety)
+credentials/
+.credentials/
+secrets/
+.secrets/
+private/
+.private/
+
+# Local storage and database backups
+*.db-backup
+*.sqlite-backup
+.local/
+local_dev/
+
+# Generated API documentation
+doc/generated/
+api_docs/
+
+# CI/CD local testing
+.ci-local/
+.test-reports/
+.coverage-reports/
+
+# Docker volumes and containers
+.docker/
+docker-compose.override.yml

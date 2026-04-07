@@ -12,7 +12,8 @@ import '../widgets/quantity_input_dialog.dart';
 import '../widgets/customer_search_dialog.dart';
 import '../widgets/edit_quantity_dialog.dart';
 import '../widgets/confirmation_dialog.dart';
-import '../widgets/pdf_email_section.dart';
+// STEP 1: Uncomment to enable email functionality
+// import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
 
@@ -40,7 +41,8 @@ class _FormScreenState extends State<FormScreen> {
   final _invoiceNumberController = TextEditingController();
   final _itemDescriptionController = TextEditingController();
   final _itemQuantityController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
+  // STEP 2: Uncomment to enable email functionality
+  // final TextEditingController _emailController = TextEditingController();
 
   String? _remark1;
   String? _remark2;
@@ -60,7 +62,8 @@ class _FormScreenState extends State<FormScreen> {
   List<Item> _allItems = [];
   bool _isLoadingItems = false;
   String? _itemLoadError;
-  bool _isPdfEmailSent = false;
+  // STEP 3: Uncomment to enable email functionality
+  // bool _isPdfEmailSent = false;
 
   List<Map<String, dynamic>> _selectedItems = [];
   final _quantityController = TextEditingController();
@@ -181,10 +184,7 @@ class _FormScreenState extends State<FormScreen> {
     _loadCustomers();
     _loadItems(); // Add item loading in initState
 
-    // Set default dates
-    _requestDate = DateTime.now();
-    _dispatchDate = DateTime.now().add(const Duration(days: 3));
-    _invoiceDate = DateTime.now();
+    // Dates are now optional and will be set by user
   }
 
   @override
@@ -194,7 +194,8 @@ class _FormScreenState extends State<FormScreen> {
     _deliveryInstructionController.dispose();
     _invoiceNumberController.dispose();
     _quantityController.dispose();
-    _emailController.dispose();
+    // STEP 4: Uncomment to enable email functionality
+    // _emailController.dispose();
     super.dispose();
   }
 
@@ -236,39 +237,65 @@ class _FormScreenState extends State<FormScreen> {
   Future<String> generateSORNumber(String accountNumber) async {
     try {
       final now = DateTime.now();
-      final dateStr = DateFormat('yyMMdd').format(now); // '250819'
+      final dateStr = DateFormat(
+        'yyMMdd',
+      ).format(now); // '260121' for Jan 21, 2026
       final prefix = 'HDI1-$dateStr';
 
-      // Try a different approach to avoid permission issues
+      // Get start and end of today
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
       try {
-        // Instead of querying with filters, get today's submissions and filter client-side
+        // Query all SORs created today by checking the createdAt timestamp
         final snapshot = await FirebaseFirestore.instance
             .collection('salesRequisitions')
-            .where('userID', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+            .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
+            .where('createdAt', isLessThanOrEqualTo: endOfDay)
             .get();
 
-        // Filter matching SORs client-side
-        final todayDocs = snapshot.docs.where((doc) {
-          final sorNumber = (doc.data()['sorNumber'] ?? '') as String;
-          return sorNumber.startsWith(prefix);
-        }).toList();
-
-        final count = todayDocs.isEmpty ? 1 : todayDocs.length + 1;
+        // Count today's SORs and increment
+        final count = snapshot.docs.length + 1;
         final paddedCount = count.toString().padLeft(3, '0');
         final sorNumber = '$prefix-$paddedCount';
 
         return sorNumber;
       } catch (e) {
-        // Second fallback - use timestamp seconds as unique identifier
-        final timestamp = DateTime.now().second;
-        final paddedTimestamp = timestamp.toString().padLeft(3, '0');
-        return '$prefix-$paddedTimestamp';
+        // Fallback: Try filtering client-side if query fails
+        try {
+          final snapshot = await FirebaseFirestore.instance
+              .collection('salesRequisitions')
+              .orderBy('createdAt', descending: true)
+              .limit(100)
+              .get();
+
+          // Filter today's SORs client-side
+          final todayDocs = snapshot.docs.where((doc) {
+            final data = doc.data();
+            final createdAt = data['createdAt'];
+            if (createdAt == null) return false;
+
+            final createdDate = (createdAt as Timestamp).toDate();
+            return createdDate.year == now.year &&
+                createdDate.month == now.month &&
+                createdDate.day == now.day;
+          }).toList();
+
+          final count = todayDocs.length + 1;
+          final paddedCount = count.toString().padLeft(3, '0');
+          final sorNumber = '$prefix-$paddedCount';
+
+          return sorNumber;
+        } catch (e2) {
+          // Final fallback - start with 001
+          return '$prefix-001';
+        }
       }
     } catch (e) {
-      // Final fallback value in case of any error
-      final timestamp = DateTime.now().millisecondsSinceEpoch % 1000;
-      final fallbackSOR = 'HDI1-ERR-${timestamp.toString().padLeft(3, '0')}';
-      return fallbackSOR;
+      // Emergency fallback
+      final now = DateTime.now();
+      final dateStr = DateFormat('yyMMdd').format(now);
+      return 'HDI1-$dateStr-001';
     }
   }
 
@@ -489,6 +516,8 @@ class _FormScreenState extends State<FormScreen> {
       await _validateForm();
 
       final now = Timestamp.now();
+      final currentDate = DateTime.now(); // Set request date to submission time
+
       final formData = {
         'customerName': _selectedCustomer!['name'],
         'accountNumber': _selectedCustomer!['accountNumber'],
@@ -497,9 +526,9 @@ class _FormScreenState extends State<FormScreen> {
         'paymentTerms': _selectedCustomer!['paymentTerms'],
         'postalAddress': _selectedCustomer!['postalAddress'],
         'sorNumber': _sorNumber,
-        'requestDate': _requestDate,
-        'dispatchDate': _dispatchDate,
-        'invoiceDate': _invoiceDate,
+        'requestDate': currentDate, // Auto-set to submission time
+        'dispatchDate': _dispatchDate, // Optional - can be null
+        'invoiceDate': _invoiceDate, // Optional - can be null
         'remark1': _remark1,
         'remark2': _remark2,
         'items': _selectedItems
@@ -517,7 +546,8 @@ class _FormScreenState extends State<FormScreen> {
         'totalAmount': _calculateTotal(),
         'userID': FirebaseAuth.instance.currentUser?.uid,
         'timeStamp': now,
-        'recipientEmail': _emailController.text,
+        'createdAt': now, // Added for daily SOR counter
+        // 'recipientEmail': _emailController.text,
         'attachedFileName': _selectedFileName,
       };
 
@@ -562,7 +592,6 @@ class _FormScreenState extends State<FormScreen> {
         _remark2 = '';
         _sorNumber = '';
         _invoiceDate = null;
-        _requestDate = null;
         _dispatchDate = null;
       });
 
@@ -607,16 +636,18 @@ class _FormScreenState extends State<FormScreen> {
         _stepValid[1] = false;
         return false;
       }
-    } else if (step == 2) {
-      // PDF Email step
-      if (_isPdfEmailSent) {
-        _stepValid[2] = true;
-        return true;
-      } else {
-        _stepValid[2] = false;
-        return false;
-      }
     }
+    // STEP 6: Uncomment to enable email functionality
+    // else if (step == 2) {
+    //   // PDF Email step
+    //   if (_isPdfEmailSent) {
+    //     _stepValid[2] = true;
+    //     return true;
+    //   } else {
+    //     _stepValid[2] = false;
+    //     return false;
+    //   }
+    // }
     return true;
   }
 
@@ -644,14 +675,10 @@ class _FormScreenState extends State<FormScreen> {
   Future<void> _selectDate(BuildContext context, int dateType) async {
     DateTime? initialDate;
 
-    if (dateType == 1) {
-      // Request Date
-      initialDate = _requestDate ?? DateTime.now();
-    } else if (dateType == 2) {
+    if (dateType == 2) {
       // Dispatch Date
-      initialDate =
-          _dispatchDate ?? DateTime.now().add(const Duration(days: 3));
-    } else {
+      initialDate = _dispatchDate ?? DateTime.now();
+    } else if (dateType == 3) {
       // Invoice Date
       initialDate = _invoiceDate ?? DateTime.now();
     }
@@ -660,7 +687,7 @@ class _FormScreenState extends State<FormScreen> {
       context: context,
       initialDate: initialDate,
       firstDate: DateTime(2023),
-      lastDate: DateTime(2025),
+      lastDate: DateTime(2027),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -670,9 +697,7 @@ class _FormScreenState extends State<FormScreen> {
               surface: AppStyles.cardColor,
               onSurface: AppStyles.textColor,
             ),
-            dialogTheme: const DialogThemeData(
-              backgroundColor: AppStyles.cardColor,
-            ),
+            dialogTheme: const DialogThemeData(backgroundColor: Colors.white),
           ),
           child: child!,
         );
@@ -681,11 +706,9 @@ class _FormScreenState extends State<FormScreen> {
 
     if (picked != null && mounted) {
       setState(() {
-        if (dateType == 1) {
-          _requestDate = picked;
-        } else if (dateType == 2) {
+        if (dateType == 2) {
           _dispatchDate = picked;
-        } else {
+        } else if (dateType == 3) {
           _invoiceDate = picked;
         }
       });
@@ -743,156 +766,67 @@ class _FormScreenState extends State<FormScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Request Date
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                'Request Date',
-                                style: TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                            ),
-                            Flexible(
-                              flex: 3,
-                              child: TextButton.icon(
-                                onPressed: () => _selectDate(context, 1),
-                                icon: const Icon(
-                                  Icons.edit_calendar,
-                                  size: 16,
-                                  color: AppStyles.primaryColor,
-                                ),
-                                label: Text(
-                                  _requestDate != null
-                                      ? dateFormat.format(_requestDate!)
-                                      : 'Select Date',
-                                  style: const TextStyle(
-                                    color: AppStyles.primaryColor,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                style: TextButton.styleFrom(
-                                  backgroundColor: AppStyles.primaryColor
-                                      .withValues(alpha: 0.1),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
                       // Dispatch Date
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                'Dispatch Date',
-                                style: TextStyle(fontWeight: FontWeight.w500),
-                              ),
+                      TextFormField(
+                        readOnly: true,
+                        decoration:
+                            AppStyles.inputDecorationWithHint(
+                              hintText: 'Select dispatch date (optional)',
+                              prefixIcon: Icons.local_shipping_rounded,
+                            ).copyWith(
+                              labelText: 'Dispatch Date',
+                              suffixIcon: _dispatchDate != null
+                                  ? IconButton(
+                                      icon: const Icon(
+                                        Icons.clear_rounded,
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          _dispatchDate = null;
+                                        });
+                                      },
+                                    )
+                                  : const Icon(Icons.calendar_today_rounded),
                             ),
-                            Flexible(
-                              flex: 3,
-                              child: TextButton.icon(
-                                onPressed: () => _selectDate(context, 2),
-                                icon: const Icon(
-                                  Icons.edit_calendar,
-                                  size: 16,
-                                  color: AppStyles.primaryColor,
-                                ),
-                                label: Text(
-                                  _dispatchDate != null
-                                      ? dateFormat.format(_dispatchDate!)
-                                      : 'Select Date',
-                                  style: const TextStyle(
-                                    color: AppStyles.primaryColor,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                style: TextButton.styleFrom(
-                                  backgroundColor: AppStyles.primaryColor
-                                      .withValues(alpha: 0.1),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                        controller: TextEditingController(
+                          text: _dispatchDate != null
+                              ? dateFormat.format(_dispatchDate!)
+                              : '',
                         ),
+                        onTap: () => _selectDate(context, 2),
                       ),
+                      const SizedBox(height: 16),
 
                       // Invoice Date
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                'Invoice Date',
-                                style: TextStyle(fontWeight: FontWeight.w500),
-                              ),
+                      TextFormField(
+                        readOnly: true,
+                        decoration:
+                            AppStyles.inputDecorationWithHint(
+                              hintText: 'Select invoice date (optional)',
+                              prefixIcon: Icons.receipt_long_rounded,
+                            ).copyWith(
+                              labelText: 'Invoice Date',
+                              suffixIcon: _invoiceDate != null
+                                  ? IconButton(
+                                      icon: const Icon(
+                                        Icons.clear_rounded,
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          _invoiceDate = null;
+                                        });
+                                      },
+                                    )
+                                  : const Icon(Icons.calendar_today_rounded),
                             ),
-                            Flexible(
-                              flex: 3,
-                              child: TextButton.icon(
-                                onPressed: () => _selectDate(context, 3),
-                                icon: const Icon(
-                                  Icons.edit_calendar,
-                                  size: 16,
-                                  color: AppStyles.primaryColor,
-                                ),
-                                label: Text(
-                                  _invoiceDate != null
-                                      ? dateFormat.format(_invoiceDate!)
-                                      : 'Select Date',
-                                  style: const TextStyle(
-                                    color: AppStyles.primaryColor,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                style: TextButton.styleFrom(
-                                  backgroundColor: AppStyles.primaryColor
-                                      .withValues(alpha: 0.1),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                        controller: TextEditingController(
+                          text: _invoiceDate != null
+                              ? dateFormat.format(_invoiceDate!)
+                              : '',
                         ),
+                        onTap: () => _selectDate(context, 3),
                       ),
                     ],
                   ),
@@ -943,24 +877,25 @@ class _FormScreenState extends State<FormScreen> {
           },
         ),
       ),
-      FormStepData(
-        title: 'PDF & Email',
-        content: PdfEmailSection(
-          selectedCustomer: _selectedCustomer,
-          selectedItems: _selectedItems,
-          sorNumber: _sorNumber,
-          requestDate: _requestDate,
-          dispatchDate: _dispatchDate,
-          invoiceDate: _invoiceDate,
-          totalAmount: _calculateTotal(),
-          remarks: _remarks,
-          onEmailSent: (isSent) {
-            setState(() {
-              _isPdfEmailSent = isSent;
-            });
-          },
-        ),
-      ),
+      // STEP 7: Uncomment to enable email functionality
+      // FormStepData(
+      //   title: 'PDF & Email',
+      //   content: PdfEmailSection(
+      //     selectedCustomer: _selectedCustomer,
+      //     selectedItems: _selectedItems,
+      //     sorNumber: _sorNumber,
+      //     requestDate: _requestDate,
+      //     dispatchDate: _dispatchDate,
+      //     invoiceDate: _invoiceDate,
+      //     totalAmount: _calculateTotal(),
+      //     remarks: _remarks,
+      //     onEmailSent: (isSent) {
+      //       setState(() {
+      //         _isPdfEmailSent = isSent;
+      //       });
+      //     },
+      //   ),
+      // ),
       FormStepData(
         title: 'Review',
         content: ReviewSection(
@@ -983,7 +918,8 @@ class _FormScreenState extends State<FormScreen> {
         final shortTitles = {
           'Customer': 'Customer',
           'Items': 'Items',
-          'PDF & Email': 'PDF', // Shortened from "PDF & Email"
+          // STEP 8: Uncomment to enable email functionality
+          // 'PDF & Email': 'PDF', // Shortened from "PDF & Email"
           'Review': 'Review',
         };
         displayTitle = shortTitles[step.title] ?? step.title;
@@ -1066,7 +1002,7 @@ class _FormScreenState extends State<FormScreen> {
               child: Row(
                 children: [
                   Text(
-                    'Step ${_currentStep + 1} of 4',
+                    'Step ${_currentStep + 1} of 3', // Changed from 4 to 3 (Email step disabled)
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: AppStyles.primaryColor,

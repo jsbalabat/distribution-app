@@ -1,0 +1,105 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is signed in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isSignedIn() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user owns the document
+    function isOwner(userIdField) {
+      return request.auth.uid == resource.data[userIdField];
+    }
+
+    // users collection
+    // - Users can read and write their own data
+    // - Admins can read and update any user (needed for role management)
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // salesRequisitions collection
+    // - Users can create their own requisitions
+    // - Users can read/update/delete their OWN requisitions
+    // - Admins can read ALL requisitions (for reports/analytics)
+    // - Admins can update/delete any requisition
+    match /salesRequisitions/{sorId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (isOwner("userID") || isAdmin());
+      allow update, delete: if isSignedIn() && (isOwner("userID") || isAdmin());
+    }
+
+    // dataImports collection
+    // - Only admins can create import requests
+    // - Only admins can read import status
+    match /dataImports/{docId} {
+      allow create, read, write: if isAdmin();
+    }
+
+    // customers collection
+    // - All authenticated users can read (for form dropdowns)
+    // - Only admins can write
+    match /customers/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // accountReceivable collection
+    // - All authenticated users can read
+    // - Only admins can write
+    match /accountReceivable/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // itemMaster collection
+    // - All authenticated users can read (for price lookups)
+    // - Only admins can write
+    match /itemMaster/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // items collection
+    // - All authenticated users can read
+    // - Only admins can write
+    match /items/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // itemsAvailable collection
+    // - All authenticated users can read (for inventory checks)
+    // - Only admins can write (for inventory management)
+    match /itemsAvailable/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Admin-only collections
+    match /admin/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Settings collection
+    // - Only admins can read and write settings
+    match /settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Catch-all (default deny for security)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

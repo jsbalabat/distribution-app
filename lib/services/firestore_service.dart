@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/item_model.dart';
+import '../models/user_model.dart';
 
 class FirestoreService {
   final _firestore = FirebaseFirestore.instance;
@@ -62,4 +63,26 @@ class FirestoreService {
 
   Stream<QuerySnapshot> getItems() =>
       _firestore.collection('items').snapshots();
+
+  // Get all users (stream)
+  Stream<List<UserModel>> getUsersStream() {
+    return _firestore.collection('users').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return UserModel.fromMap(doc.data(), doc.id);
+      }).toList();
+    });
+  }
+
+  // Update user role
+  Future<void> updateUserRole(String uid, String newRole) async {
+    await _firestore.collection('users').doc(uid).update({'role': newRole});
+  }
+
+  // Admin: Get all submissions for reports
+  Stream<QuerySnapshot> getAllSubmissionsStream() {
+    return _firestore
+        .collection('salesRequisitions')
+        .orderBy('timeStamp', descending: true)
+        .snapshots();
+  }
 }

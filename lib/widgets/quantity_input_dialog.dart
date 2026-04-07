@@ -29,6 +29,7 @@ class _QuantityInputDialogState extends State<QuantityInputDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      backgroundColor: Colors.white,
       title: Text('Add ${widget.item.name}'),
       content: Column(
         mainAxisSize: MainAxisSize.min,

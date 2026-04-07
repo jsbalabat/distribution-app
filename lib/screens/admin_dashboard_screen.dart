@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../styles/app_styles.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'manage_users_screen.dart';
+import 'view_reports_screen.dart';
+import 'settings_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -13,6 +16,54 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  void _showLogoutConfirmation(
+    BuildContext context,
+    UserProvider userProvider,
+  ) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppStyles.borderRadiusMedium),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.logout, color: AppStyles.errorColor),
+              SizedBox(width: 12),
+              Text('Confirm Logout'),
+            ],
+          ),
+          content: const Text(
+            'Are you sure you want to log out?',
+            style: TextStyle(fontSize: 16),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: AppStyles.textSecondaryColor),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                userProvider.signOut();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppStyles.errorColor,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
@@ -24,12 +75,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         elevation: 0,
         backgroundColor: AppStyles.adminPrimaryColor,
         title: Text('Admin Dashboard', style: AppStyles.appBarTitleStyle),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: IconButton(
-              icon: const Icon(Icons.logout_outlined),
-              onPressed: () => userProvider.signOut(),
+              icon: const Icon(Icons.logout_outlined, color: Colors.white),
+              onPressed: () => _showLogoutConfirmation(context, userProvider),
               tooltip: 'Sign Out',
             ),
           ),
@@ -100,7 +152,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       mainAxisSpacing: AppStyles.spacingM,
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      childAspectRatio: 1.3,
+                      childAspectRatio: 1.5,
                       children: [
                         _buildStatCard(
                           title: 'Total Users',
@@ -111,13 +163,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         _buildStatCard(
                           title: 'Total Sales',
                           value: '₱245K',
-                          icon: Icons.attach_money,
+                          icon: Icons.trending_up_rounded,
                           gradientColors: AppStyles.statCardGradients[1],
                         ),
                         _buildStatCard(
                           title: 'Pending Orders',
                           value: '12',
-                          icon: Icons.shopping_cart_outlined,
+                          icon: Icons.pending_actions_rounded,
                           gradientColors: AppStyles.statCardGradients[2],
                         ),
                         _buildStatCard(
@@ -131,41 +183,72 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                     const SizedBox(height: AppStyles.spacingXL),
 
-                    Text('Quick Actions', style: AppStyles.headingStyle),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppStyles.primaryColor.withValues(
+                              alpha: 0.08,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppStyles.borderRadiusSmall,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.dashboard_customize_rounded,
+                            color: AppStyles.primaryColor,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('Quick Actions', style: AppStyles.headingStyle),
+                      ],
+                    ),
                     const SizedBox(height: AppStyles.spacingM),
 
                     _buildActionCard(
                       label: 'Manage Users',
                       subtitle: 'View and edit user accounts',
                       icon: Icons.people_outline,
-                      color: Colors.blue,
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ManageUsersScreen(),
+                          ),
+                        );
+                      },
                     ),
-                    const SizedBox(height: AppStyles.spacingM),
+                    const SizedBox(height: AppStyles.spacingS),
 
                     _buildActionCard(
                       label: 'View Reports',
                       subtitle: 'Analytics and insights',
                       icon: Icons.bar_chart_rounded,
-                      color: Colors.green,
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ViewReportsScreen(),
+                          ),
+                        );
+                      },
                     ),
-                    const SizedBox(height: AppStyles.spacingM),
+                    const SizedBox(height: AppStyles.spacingS),
 
                     _buildActionCard(
                       label: 'Inventory',
                       subtitle: 'Manage product inventory',
                       icon: Icons.inventory_2_outlined,
-                      color: Colors.purple,
                       onTap: () {},
                     ),
-                    const SizedBox(height: AppStyles.spacingM),
+                    const SizedBox(height: AppStyles.spacingS),
 
                     _buildActionCard(
                       label: 'Upload Customers',
                       subtitle: 'Import customer data',
                       icon: Icons.upload_file_outlined,
-                      color: Colors.orange,
                       onTap: () async {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -206,14 +289,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         }
                       },
                     ),
-                    const SizedBox(height: AppStyles.spacingM),
+                    const SizedBox(height: AppStyles.spacingS),
 
                     _buildActionCard(
                       label: 'Settings',
                       subtitle: 'System configuration',
                       icon: Icons.settings_outlined,
-                      color: Colors.grey,
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SettingsScreen(),
+                          ),
+                        );
+                      },
                     ),
 
                     const SizedBox(height: AppStyles.spacingXL),
@@ -250,26 +339,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppStyles.spacingM),
+        padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 32, color: Colors.white.withValues(alpha: 0.9)),
+            Icon(icon, size: 28, color: Colors.white.withValues(alpha: 0.9)),
             const Spacer(),
             Text(
               value,
               style: const TextStyle(
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               title,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 color: Colors.white.withValues(alpha: 0.9),
               ),
             ),
@@ -283,31 +372,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required String label,
     required String subtitle,
     required IconData icon,
-    required Color color,
     required VoidCallback onTap,
   }) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
-        side: BorderSide(color: Colors.grey.withValues(alpha: 0.2), width: 1),
-      ),
+    return Container(
+      decoration: AppStyles.cardDecoration,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
         child: Padding(
-          padding: const EdgeInsets.all(AppStyles.spacingM),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
+                  color: AppStyles.primaryColor.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(
                     AppStyles.borderRadiusMedium,
                   ),
                 ),
-                child: Icon(icon, size: 28, color: color),
+                child: Icon(icon, size: 24, color: AppStyles.primaryColor),
               ),
               const SizedBox(width: AppStyles.spacingM),
               Expanded(
@@ -317,19 +401,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Text(
                       label,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
+                        color: AppStyles.textColor,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppStyles.textSecondaryColor,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: AppStyles.textLightColor,
+              ),
             ],
           ),
         ),
