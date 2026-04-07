@@ -124,6 +124,22 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // notifications collection
+    // - Signed-in users can create notifications they author
+    // - Users can read notifications targeted to them
+    // - Admins can read/admin notifications and manage read state
+    match /notifications/{notificationId} {
+      allow create: if isSignedIn()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow read: if isAdmin()
+        || request.auth.uid == resource.data.recipientUid
+        || (resource.data.targetRole == 'admin' && isAdmin());
+      allow update: if isAdmin()
+        || request.auth.uid == resource.data.recipientUid;
+      allow delete: if isAdmin();
+    }
+
     // Catch-all (default deny for security)
     match /{document=**} {
       allow read, write: if false;

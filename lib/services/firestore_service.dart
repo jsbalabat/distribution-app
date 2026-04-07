@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/item_model.dart';
 import '../models/user_model.dart';
 import 'audit_service.dart';
+import 'notification_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
 
@@ -12,6 +13,7 @@ class FirestoreService {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
   final _auditService = AuditService();
+  final _notificationService = NotificationService.instance;
 
   // Save a new SOR form
   Future<void> submitSOR(Map<String, dynamic> formData) async {
@@ -45,6 +47,29 @@ class FirestoreService {
           'totalAmount': normalized['totalAmount'],
           'itemCount': (normalized['items'] as List<dynamic>? ?? []).length,
         },
+      );
+
+      final sorNumber = (normalized['sorNumber'] ?? docRef.id).toString();
+      final customerName = (normalized['customerName'] ?? 'your requisition')
+          .toString();
+
+      await _notificationService.notifyUser(
+        recipientUid: uid,
+        title: 'Submission received',
+        body: 'Your requisition $sorNumber for $customerName was submitted.',
+        action: 'create',
+        entityType: 'salesRequisition',
+        entityId: docRef.id,
+        details: {'sorNumber': sorNumber},
+      );
+
+      await _notificationService.notifyAdmins(
+        title: 'New requisition submitted',
+        body: '$customerName submitted requisition $sorNumber.',
+        action: 'create',
+        entityType: 'salesRequisition',
+        entityId: docRef.id,
+        details: {'sorNumber': sorNumber, 'submittedBy': uid},
       );
     } on FirebaseException catch (e, st) {
       AppLogger.error(
@@ -204,10 +229,22 @@ class FirestoreService {
   Future<void> updateUserRole(String uid, String newRole) async {
     final userDoc = await _firestore.collection('users').doc(uid).get();
     final previousRole = (userDoc.data()?['role'] ?? 'unknown').toString();
+    final userName = (userDoc.data()?['name'] ?? 'your account').toString();
 
     await _firestore.collection('users').doc(uid).update({'role': newRole});
 
     await _auditService.logAction(
+      action: 'updateRole',
+      entityType: 'user',
+      entityId: uid,
+      details: {'previousRole': previousRole, 'newRole': newRole},
+    );
+
+    await _notificationService.notifyUser(
+      recipientUid: uid,
+      title: 'Role updated',
+      body:
+          'Your account role for $userName changed from $previousRole to $newRole.',
       action: 'updateRole',
       entityType: 'user',
       entityId: uid,
@@ -237,13 +274,35 @@ class FirestoreService {
       entityId: docId,
       details: {'softDelete': true},
     );
+
+    final data = snapshot.data() ?? <String, dynamic>{};
+    final ownerUid = (data['userID'] ?? data['uid'] ?? '').toString();
+    final sorNumber = (data['sorNumber'] ?? data['sorNo'] ?? docId).toString();
+
+    if (ownerUid.isNotEmpty) {
+      await _notificationService.notifyUser(
+        recipientUid: ownerUid,
+        title: 'Requisition archived',
+        body: 'Your requisition $sorNumber was archived.',
+        action: 'delete',
+        entityType: 'salesRequisition',
+        entityId: docId,
+        details: {'softDelete': true},
+      );
+    }
   }
 
   Future<void> updateSalesRequisition(
     String docId,
     Map<String, dynamic> updates,
   ) async {
-    await _firestore.collection('salesRequisitions').doc(docId).update(updates);
+    final docRef = _firestore.collection('salesRequisitions').doc(docId);
+    final snapshot = await docRef.get();
+    final data = snapshot.data() ?? <String, dynamic>{};
+    final ownerUid = (data['userID'] ?? data['uid'] ?? '').toString();
+    final sorNumber = (data['sorNumber'] ?? data['sorNo'] ?? docId).toString();
+
+    await docRef.update(updates);
 
     await _auditService.logAction(
       action: 'update',
@@ -251,6 +310,18 @@ class FirestoreService {
       entityId: docId,
       details: {'updatedFields': updates.keys.toList()},
     );
+
+    if (ownerUid.isNotEmpty) {
+      await _notificationService.notifyUser(
+        recipientUid: ownerUid,
+        title: 'Requisition updated',
+        body: 'Your requisition $sorNumber was updated.',
+        action: 'update',
+        entityType: 'salesRequisition',
+        entityId: docId,
+        details: {'updatedFields': updates.keys.toList()},
+      );
+    }
   }
 
   // Admin: Get all submissions for reports

@@ -10,6 +10,7 @@ import 'screens/auth_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/audit_logs_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'providers/user_provider.dart';
 import 'package:provider/provider.dart';
 import 'styles/app_styles.dart';
@@ -172,6 +173,7 @@ class MyApp extends StatelessWidget {
         '/submissions': (context) => const SubmissionsScreen(),
         '/transaction_detail': (context) => const TransactionDetailScreen(),
         '/audit_logs': (context) => const AuditLogsScreen(),
+        '/notifications': (context) => const NotificationsScreen(),
       },
     );
   }

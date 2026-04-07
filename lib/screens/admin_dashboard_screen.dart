@@ -8,6 +8,7 @@ import 'manage_users_screen.dart';
 import 'view_reports_screen.dart';
 import 'settings_screen.dart';
 import 'audit_logs_screen.dart';
+import 'notifications_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -78,6 +79,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         title: Text('Admin Dashboard', style: AppStyles.appBarTitleStyle),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: IconButton(
+              icon: const Icon(Icons.notifications_none, color: Colors.white),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationsScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Notifications',
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: IconButton(
