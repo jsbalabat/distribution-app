@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'manage_users_screen.dart';
 import 'view_reports_screen.dart';
 import 'settings_screen.dart';
+import 'audit_logs_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -300,6 +301,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           context,
                           MaterialPageRoute(
                             builder: (context) => const SettingsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: AppStyles.spacingS),
+
+                    _buildActionCard(
+                      label: 'Audit Logs',
+                      subtitle: 'View tracked admin and data actions',
+                      icon: Icons.history_edu_outlined,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AuditLogsScreen(),
                           ),
                         );
                       },
