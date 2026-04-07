@@ -23,6 +23,8 @@ class EditRequisitionScreen extends StatefulWidget {
 }
 
 class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
+
   // Color scheme to match other screens
 
   List<Map<String, dynamic>> _items = [];
@@ -502,16 +504,13 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
 
           try {
             // Update the data in Firestore
-            await FirebaseFirestore.instance
-                .collection('salesRequisitions')
-                .doc(widget.docId)
-                .update({
-                  'items': _items,
-                  'totalAmount': _calculateTotal(),
-                  'invoiceDate': _invoiceDate,
-                  'dispatchDate': _dispatchDate,
-                  'lastEdited': Timestamp.now(),
-                });
+            await _firestoreService.updateSalesRequisition(widget.docId, {
+              'items': _items,
+              'totalAmount': _calculateTotal(),
+              'invoiceDate': _invoiceDate,
+              'dispatchDate': _dispatchDate,
+              'lastEdited': Timestamp.now(),
+            });
 
             // Use a new context check after the async gap
             if (!mounted) return;

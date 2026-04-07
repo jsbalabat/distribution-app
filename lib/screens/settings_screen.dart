@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/audit_service.dart';
 import '../styles/app_styles.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -11,6 +12,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _firestore = FirebaseFirestore.instance;
+  final _auditService = AuditService();
   bool _isLoading = true;
 
   // Settings values
@@ -98,6 +100,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'companyPhone': _companyPhoneController.text,
         'lastUpdated': FieldValue.serverTimestamp(),
       });
+
+      await _auditService.logAction(
+        action: 'update',
+        entityType: 'settings',
+        entityId: 'appSettings',
+        details: {
+          'autoApproveOrders': _autoApproveOrders,
+          'lowStockAlerts': _lowStockAlerts,
+          'emailNotifications': _emailNotifications,
+          'lowStockThreshold': int.tryParse(_lowStockController.text) ?? 10,
+        },
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

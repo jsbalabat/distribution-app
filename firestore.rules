@@ -114,6 +114,16 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // auditLogs collection
+    // - Any signed-in user can create logs for their own actor UID
+    // - Only admins can read/update/delete logs
+    match /auditLogs/{logId} {
+      allow create: if isSignedIn()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.timestamp == request.time;
+      allow read, update, delete: if isAdmin();
+    }
+
     // Catch-all (default deny for security)
     match /{document=**} {
       allow read, write: if false;

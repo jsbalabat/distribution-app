@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../styles/app_styles.dart';
+import '../services/firestore_service.dart';
 import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
 import 'edit_requisition_screen.dart';
@@ -17,6 +18,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   static const int _maxDashboardRecords = 100;
 
+  final FirestoreService _firestoreService = FirestoreService();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final int _currentIndex = 0;
 
@@ -128,10 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             onPressed: () async {
-              await FirebaseFirestore.instance
-                  .collection('salesRequisitions')
-                  .doc(docId)
-                  .delete();
+              await _firestoreService.deleteSalesRequisition(docId);
               if (!dialogContext.mounted) return;
               Navigator.pop(dialogContext);
               if (!context.mounted) return;

@@ -483,6 +483,8 @@ class _FormScreenState extends State<FormScreen> {
 
   // Update inventory after form submission
   Future<void> _updateInventory() async {
+    final firestoreService = FirestoreService();
+
     for (final item in _selectedItems) {
       final itemId = item['id'];
       final purchasedQty = item['quantity'] ?? 0;
@@ -501,7 +503,7 @@ class _FormScreenState extends State<FormScreen> {
                 .clamp(0, double.infinity)
                 .toInt();
 
-        await itemRef.update({'quantity': updatedStock});
+        await firestoreService.updateItemStock(itemId, updatedStock);
       }
     }
   }
@@ -556,9 +558,7 @@ class _FormScreenState extends State<FormScreen> {
       };
 
       try {
-        await FirebaseFirestore.instance
-            .collection('salesRequisitions')
-            .add(formData);
+        await FirestoreService().submitSOR(formData);
       } catch (e) {
         if (!mounted) return;
         handleError(

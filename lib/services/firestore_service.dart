@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/item_model.dart';
 import '../models/user_model.dart';
+import 'audit_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
 
@@ -10,6 +11,7 @@ class FirestoreService {
 
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
+  final _auditService = AuditService();
 
   // Save a new SOR form
   Future<void> submitSOR(Map<String, dynamic> formData) async {
@@ -31,7 +33,19 @@ class FirestoreService {
     };
 
     try {
-      await _firestore.collection('salesRequisitions').add(normalized);
+      final docRef = await _firestore
+          .collection('salesRequisitions')
+          .add(normalized);
+      await _auditService.logAction(
+        action: 'create',
+        entityType: 'salesRequisition',
+        entityId: docRef.id,
+        details: {
+          'sorNumber': normalized['sorNumber'],
+          'totalAmount': normalized['totalAmount'],
+          'itemCount': (normalized['items'] as List<dynamic>? ?? []).length,
+        },
+      );
     } on FirebaseException catch (e, st) {
       AppLogger.error(
         'Failed to submit sales requisition',
@@ -93,9 +107,26 @@ class FirestoreService {
 
   Future<void> updateItemStock(String id, int quantity) async {
     try {
+      final current = await _firestore
+          .collection('itemsAvailable')
+          .doc(id)
+          .get();
+      final previousQuantity =
+          (current.data()?['quantity'] ?? current.data()?['stock'] ?? 0) as num;
+
       await _firestore.collection('itemsAvailable').doc(id).update({
         'quantity': quantity,
       });
+
+      await _auditService.logAction(
+        action: 'update',
+        entityType: 'inventory',
+        entityId: id,
+        details: {
+          'previousQuantity': previousQuantity.toInt(),
+          'newQuantity': quantity,
+        },
+      );
     } on FirebaseException catch (e, st) {
       AppLogger.error(
         'Failed to update item stock for item: $id',
@@ -171,7 +202,41 @@ class FirestoreService {
 
   // Update user role
   Future<void> updateUserRole(String uid, String newRole) async {
+    final userDoc = await _firestore.collection('users').doc(uid).get();
+    final previousRole = (userDoc.data()?['role'] ?? 'unknown').toString();
+
     await _firestore.collection('users').doc(uid).update({'role': newRole});
+
+    await _auditService.logAction(
+      action: 'updateRole',
+      entityType: 'user',
+      entityId: uid,
+      details: {'previousRole': previousRole, 'newRole': newRole},
+    );
+  }
+
+  Future<void> deleteSalesRequisition(String docId) async {
+    await _firestore.collection('salesRequisitions').doc(docId).delete();
+
+    await _auditService.logAction(
+      action: 'delete',
+      entityType: 'salesRequisition',
+      entityId: docId,
+    );
+  }
+
+  Future<void> updateSalesRequisition(
+    String docId,
+    Map<String, dynamic> updates,
+  ) async {
+    await _firestore.collection('salesRequisitions').doc(docId).update(updates);
+
+    await _auditService.logAction(
+      action: 'update',
+      entityType: 'salesRequisition',
+      entityId: docId,
+      details: {'updatedFields': updates.keys.toList()},
+    );
   }
 
   // Admin: Get all submissions for reports
