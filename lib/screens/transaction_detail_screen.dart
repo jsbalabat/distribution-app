@@ -58,6 +58,7 @@ class TransactionDetailScreen extends StatefulWidget {
 class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final List<DocumentSnapshot<Map<String, dynamic>>> _docs = [];
+  String _searchQuery = '';
 
   DocumentSnapshot<Map<String, dynamic>>? _lastDoc;
   bool _isInitialLoading = true;
@@ -203,7 +204,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                       Text('Transaction Details', style: AppStyles.titleStyle),
                       const SizedBox(height: AppStyles.spacingXS),
                       Text(
-                        'Loaded ${_docs.length} transactions',
+                        _searchQuery.isEmpty
+                            ? 'Loaded ${_docs.length} transactions'
+                            : 'Filtered ${_buildRows().length} line items from ${_docs.length} transactions',
                         style: AppStyles.subtitleStyle,
                       ),
                     ],
@@ -234,7 +237,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
               onChanged: (value) {
-                // Search functionality would go here
+                setState(() {
+                  _searchQuery = value.trim().toLowerCase();
+                });
               },
             ),
           ),
@@ -436,8 +441,23 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     for (final doc in _docs) {
       final data = doc.data() ?? <String, dynamic>{};
       final items = data['items'] as List<dynamic>? ?? [];
+      final sor = RequisitionFields.sorNumber(data).toLowerCase();
+      final customer = (data['customerName'] ?? '').toString().toLowerCase();
+      final account = (data['accountNumber'] ?? '').toString().toLowerCase();
 
       for (final item in items) {
+        final itemName = (item['name'] ?? '').toString().toLowerCase();
+        final itemCode = (item['code'] ?? '').toString().toLowerCase();
+        final matchesSearch =
+            _searchQuery.isEmpty ||
+            sor.contains(_searchQuery) ||
+            customer.contains(_searchQuery) ||
+            account.contains(_searchQuery) ||
+            itemName.contains(_searchQuery) ||
+            itemCode.contains(_searchQuery);
+
+        if (!matchesSearch) continue;
+
         rows.add(
           DataRow(
             cells: [

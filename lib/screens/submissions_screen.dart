@@ -15,6 +15,7 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
 
   final FirestoreService _firestoreService = FirestoreService();
   final List<DocumentSnapshot<Map<String, dynamic>>> _docs = [];
+  String _searchQuery = '';
 
   DocumentSnapshot<Map<String, dynamic>>? _lastDoc;
   bool _isInitialLoading = true;
@@ -89,6 +90,18 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final filteredDocs = _docs.where((doc) {
+      final data = doc.data() ?? <String, dynamic>{};
+      if (_searchQuery.isEmpty) return true;
+
+      final q = _searchQuery.toLowerCase();
+      final sor = RequisitionFields.sorNumber(data).toLowerCase();
+      final customer = (data['customerName'] ?? '').toString().toLowerCase();
+      final account = (data['accountNumber'] ?? '').toString().toLowerCase();
+
+      return sor.contains(q) || customer.contains(q) || account.contains(q);
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text("My Submissions")),
       body: _isInitialLoading
@@ -112,9 +125,27 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
           : RefreshIndicator(
               onRefresh: _loadInitial,
               child: ListView.builder(
-                itemCount: _docs.length + 1,
+                itemCount: filteredDocs.length + 2,
                 itemBuilder: (context, index) {
-                  if (index >= _docs.length) {
+                  if (index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Search by SOR, customer, or account',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value.trim();
+                          });
+                        },
+                      ),
+                    );
+                  }
+
+                  final dataIndex = index - 1;
+                  if (dataIndex >= filteredDocs.length) {
                     if (_isLoadingMore) {
                       return const Padding(
                         padding: EdgeInsets.symmetric(vertical: 16),
@@ -146,7 +177,8 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
                     );
                   }
 
-                  final data = _docs[index].data() ?? <String, dynamic>{};
+                  final data =
+                      filteredDocs[dataIndex].data() ?? <String, dynamic>{};
                   final ts = RequisitionFields.timestamp(data);
                   return ListTile(
                     title: Text(RequisitionFields.sorNumber(data)),
