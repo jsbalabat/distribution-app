@@ -6,6 +6,8 @@ import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
 
 class FirestoreService {
+  static const int defaultSubmissionLimit = 100;
+
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
 
@@ -116,7 +118,9 @@ class FirestoreService {
   }
 
   // Stream user’s submissions
-  Stream<QuerySnapshot> getUserSubmissions() {
+  Stream<QuerySnapshot> getUserSubmissions({
+    int limit = defaultSubmissionLimit,
+  }) {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
@@ -124,6 +128,7 @@ class FirestoreService {
         .collection('salesRequisitions')
         .where('userID', isEqualTo: uid)
         .orderBy('timeStamp', descending: true)
+        .limit(limit)
         .snapshots();
   }
 
@@ -149,10 +154,15 @@ class FirestoreService {
   }
 
   // Admin: Get all submissions for reports
-  Stream<QuerySnapshot> getAllSubmissionsStream() {
-    return _firestore
+  Stream<QuerySnapshot> getAllSubmissionsStream({int? limit}) {
+    Query query = _firestore
         .collection('salesRequisitions')
-        .orderBy('timeStamp', descending: true)
-        .snapshots();
+        .orderBy('timeStamp', descending: true);
+
+    if (limit != null && limit > 0) {
+      query = query.limit(limit);
+    }
+
+    return query.snapshots();
   }
 }

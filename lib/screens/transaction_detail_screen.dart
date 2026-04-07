@@ -46,6 +46,8 @@ Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
 }
 
 class TransactionDetailScreen extends StatelessWidget {
+  static const int _maxTransactionRecords = 100;
+
   const TransactionDetailScreen({super.key});
 
   @override
@@ -127,13 +129,14 @@ class TransactionDetailScreen extends StatelessWidget {
                         stream: FirebaseFirestore.instance
                             .collection('salesRequisitions')
                             .where('userID', isEqualTo: uid)
+                            .limit(_maxTransactionRecords)
                             .snapshots(),
                         builder: (context, snapshot) {
                           int totalTransactions = snapshot.hasData
                               ? snapshot.data!.docs.length
                               : 0;
                           return Text(
-                            'Showing all $totalTransactions transaction records',
+                            'Showing recent $totalTransactions transactions (max $_maxTransactionRecords)',
                             style: AppStyles.subtitleStyle,
                           );
                         },
@@ -193,6 +196,7 @@ class TransactionDetailScreen extends StatelessWidget {
                     .collection('salesRequisitions')
                     .where('userID', isEqualTo: uid)
                     .orderBy('timeStamp', descending: true)
+                    .limit(_maxTransactionRecords)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {

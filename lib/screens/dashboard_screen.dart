@@ -15,6 +15,8 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  static const int _maxDashboardRecords = 100;
+
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final int _currentIndex = 0;
 
@@ -192,6 +194,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             .collection('salesRequisitions')
             .where('userID', isEqualTo: uid)
             .orderBy('timeStamp', descending: true)
+            .limit(_maxDashboardRecords)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
