@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
 import '../styles/app_styles.dart';
+import '../utils/requisition_fields.dart';
 
 class ViewReportsScreen extends StatelessWidget {
   const ViewReportsScreen({super.key});
@@ -24,7 +25,7 @@ class ViewReportsScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: firestoreService.getAllSubmissionsStream(),
+        stream: firestoreService.getAllSubmissionsStream(limit: 500),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
@@ -49,7 +50,7 @@ class ViewReportsScreen extends StatelessWidget {
             final data = doc.data() as Map<String, dynamic>;
 
             // Total Sales
-            final amount = (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
+            final amount = RequisitionFields.totalAmount(data);
             totalSales += amount;
 
             // Product Stats
@@ -58,7 +59,10 @@ class ViewReportsScreen extends StatelessWidget {
               for (var item in items) {
                 final name = item['name'] as String? ?? 'Unknown';
                 final qty = (item['quantity'] as num?)?.toInt() ?? 0;
-                final subtotal = (item['subtotal'] as num?)?.toDouble() ?? 0.0;
+                final unitPrice =
+                    (item['unitPrice'] as num?)?.toDouble() ?? 0.0;
+                final subtotal =
+                    (item['subtotal'] as num?)?.toDouble() ?? (qty * unitPrice);
 
                 productSales[name] = (productSales[name] ?? 0) + subtotal;
                 productQuantities[name] = (productQuantities[name] ?? 0) + qty;
@@ -210,8 +214,7 @@ class ViewReportsScreen extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
                     final date =
-                        (data['createdAt'] as Timestamp?)?.toDate() ??
-                        DateTime.now();
+                        RequisitionFields.timestamp(data) ?? DateTime.now();
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -232,11 +235,13 @@ class ViewReportsScreen extends StatelessWidget {
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(
-                          '${data['sorNumber'] ?? 'N/A'} • ${DateFormat.yMMMd().format(date)}',
+                          '${RequisitionFields.sorNumber(data)} • ${DateFormat.yMMMd().format(date)}',
                           style: AppStyles.captionStyle,
                         ),
                         trailing: Text(
-                          currencyFormat.format(data['totalAmount'] ?? 0),
+                          currencyFormat.format(
+                            RequisitionFields.totalAmount(data),
+                          ),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
