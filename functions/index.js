@@ -14,6 +14,33 @@ admin.initializeApp();
 const db = admin.firestore();
 const storage = new Storage();
 
+/**
+ * Deletes query results in batches of up to 500 documents.
+ * @param {FirebaseFirestore.Query<FirebaseFirestore.DocumentData>} query Firestore query with batch limit applied.
+ * @return {Promise<number>} Total number of deleted documents.
+ */
+async function deleteInBatches(query) {
+  let deleted = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const snapshot = await query.get();
+    if (snapshot.empty) {
+      hasMore = false;
+      break;
+    }
+
+    const batch = db.batch();
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+
+    deleted += snapshot.size;
+    hasMore = snapshot.size >= 500;
+  }
+
+  return deleted;
+}
+
 // ========================================
 // SCHEDULED CLEANUP FUNCTION - Runs Daily at Midnight
 // Deletes ALL data except users and logs
@@ -123,6 +150,69 @@ exports.deleteAllDataExceptUsersAndLogs = onSchedule(
           executedAt: admin.firestore.Timestamp.now(),
           type: "complete_cleanup",
           status: "failed",
+          error: error.message,
+          errorStack: error.stack,
+        });
+
+        throw error;
+      }
+    },
+);
+
+// ========================================
+// SCHEDULED AUDIT LOG RETENTION CLEANUP
+// Keeps recent audit logs, prunes old entries
+// ========================================
+
+exports.pruneAuditLogs = onSchedule(
+    {
+      schedule: "30 1 * * *", // Runs daily at 01:30
+      timeZone: "Asia/Manila",
+      memory: "256MiB",
+    },
+    async (event) => {
+      const retentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || 180);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+      const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
+
+      console.log(
+          `Starting audit log pruning. Retention: ${retentionDays} days, cutoff: ${cutoffDate.toISOString()}`,
+      );
+
+      try {
+        const pruneQuery = db
+            .collection("auditLogs")
+            .where("timestamp", "<", cutoffTimestamp)
+            .limit(500);
+
+        const deletedCount = await deleteInBatches(pruneQuery);
+
+        await db.collection("cleanupLogs").add({
+          executedAt: admin.firestore.Timestamp.now(),
+          type: "audit_log_prune",
+          status: "success",
+          retentionDays: retentionDays,
+          cutoffTimestamp: cutoffTimestamp,
+          deletedCount: deletedCount,
+          message: `Pruned ${deletedCount} audit logs older than ${retentionDays} days`,
+        });
+
+        console.log(`Audit log pruning completed. Deleted: ${deletedCount}`);
+
+        return {
+          success: true,
+          deletedCount: deletedCount,
+          retentionDays: retentionDays,
+        };
+      } catch (error) {
+        console.error("Audit log pruning failed:", error);
+
+        await db.collection("cleanupLogs").add({
+          executedAt: admin.firestore.Timestamp.now(),
+          type: "audit_log_prune",
+          status: "failed",
+          retentionDays: retentionDays,
           error: error.message,
           errorStack: error.stack,
         });
