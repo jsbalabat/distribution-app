@@ -20,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _lowStockAlerts = true;
   bool _emailNotifications = true;
   int _lowStockThreshold = 10;
+  int _auditLogRetentionDays = 180;
   String _companyName = '';
   String _companyEmail = '';
   String _companyPhone = '';
@@ -28,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _companyEmailController = TextEditingController();
   final _companyPhoneController = TextEditingController();
   final _lowStockController = TextEditingController();
+  final _auditLogRetentionController = TextEditingController();
 
   @override
   void initState() {
@@ -41,7 +43,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _companyEmailController.dispose();
     _companyPhoneController.dispose();
     _lowStockController.dispose();
+    _auditLogRetentionController.dispose();
     super.dispose();
+  }
+
+  int _parseRetentionDays(String value) {
+    final parsed = int.tryParse(value) ?? 180;
+    if (parsed < 30) return 30;
+    if (parsed > 3650) return 3650;
+    return parsed;
   }
 
   Future<void> _loadSettings() async {
@@ -58,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _lowStockAlerts = data['lowStockAlerts'] ?? true;
           _emailNotifications = data['emailNotifications'] ?? true;
           _lowStockThreshold = data['lowStockThreshold'] ?? 10;
+          _auditLogRetentionDays = data['auditLogRetentionDays'] ?? 180;
           _companyName = data['companyName'] ?? '';
           _companyEmail = data['companyEmail'] ?? '';
           _companyPhone = data['companyPhone'] ?? '';
@@ -66,10 +77,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _companyEmailController.text = _companyEmail;
           _companyPhoneController.text = _companyPhone;
           _lowStockController.text = _lowStockThreshold.toString();
+          _auditLogRetentionController.text = _auditLogRetentionDays.toString();
           _isLoading = false;
         });
       } else {
         setState(() {
+          _auditLogRetentionController.text = _auditLogRetentionDays.toString();
           _isLoading = false;
         });
       }
@@ -89,17 +102,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveSettings() async {
+    final lowStockThreshold = int.tryParse(_lowStockController.text) ?? 10;
+    final auditLogRetentionDays = _parseRetentionDays(
+      _auditLogRetentionController.text,
+    );
+
     try {
       await _firestore.collection('settings').doc('appSettings').set({
         'autoApproveOrders': _autoApproveOrders,
         'lowStockAlerts': _lowStockAlerts,
         'emailNotifications': _emailNotifications,
-        'lowStockThreshold': int.tryParse(_lowStockController.text) ?? 10,
+        'lowStockThreshold': lowStockThreshold,
+        'auditLogRetentionDays': auditLogRetentionDays,
         'companyName': _companyNameController.text,
         'companyEmail': _companyEmailController.text,
         'companyPhone': _companyPhoneController.text,
         'lastUpdated': FieldValue.serverTimestamp(),
       });
+
+      _auditLogRetentionController.text = auditLogRetentionDays.toString();
 
       await _auditService.logAction(
         action: 'update',
@@ -109,7 +130,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'autoApproveOrders': _autoApproveOrders,
           'lowStockAlerts': _lowStockAlerts,
           'emailNotifications': _emailNotifications,
-          'lowStockThreshold': int.tryParse(_lowStockController.text) ?? 10,
+          'lowStockThreshold': lowStockThreshold,
+          'auditLogRetentionDays': auditLogRetentionDays,
         },
       );
 
@@ -293,6 +315,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+
+                  const SizedBox(height: AppStyles.spacingXL),
+
+                  // System Maintenance Section
+                  Text('System Maintenance', style: AppStyles.headingStyle),
+                  const SizedBox(height: AppStyles.spacingM),
+                  Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppStyles.borderRadiusMedium,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppStyles.spacingM),
+                      child: TextField(
+                        controller: _auditLogRetentionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Audit Log Retention',
+                          helperText:
+                              'Days to keep audit logs (minimum 30, maximum 3650)',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.history_toggle_off_outlined),
+                          suffixText: 'days',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
                     ),
                   ),
 

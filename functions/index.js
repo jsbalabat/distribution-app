@@ -41,6 +41,33 @@ async function deleteInBatches(query) {
   return deleted;
 }
 
+/**
+ * Resolves audit log retention days from Firestore settings with env fallback.
+ * @return {Promise<number>} Retention period in days.
+ */
+async function getAuditLogRetentionDays() {
+  const defaultRetentionDays = 180;
+  const envValue = Number(process.env.AUDIT_LOG_RETENTION_DAYS || defaultRetentionDays);
+  const envRetentionDays = Number.isFinite(envValue) ? envValue : defaultRetentionDays;
+
+  try {
+    const settingsDoc = await db.collection("settings").doc("appSettings").get();
+    if (!settingsDoc.exists) {
+      return envRetentionDays;
+    }
+
+    const configuredValue = Number(settingsDoc.get("auditLogRetentionDays"));
+    const retentionDays = Number.isFinite(configuredValue) ? configuredValue : envRetentionDays;
+
+    if (retentionDays < 30) return 30;
+    if (retentionDays > 3650) return 3650;
+    return Math.floor(retentionDays);
+  } catch (error) {
+    console.error("Failed to load auditLogRetentionDays from settings, using env/default", error);
+    return envRetentionDays;
+  }
+}
+
 // ========================================
 // SCHEDULED CLEANUP FUNCTION - Runs Daily at Midnight
 // Deletes ALL data except users and logs
@@ -171,7 +198,7 @@ exports.pruneAuditLogs = onSchedule(
       memory: "256MiB",
     },
     async (event) => {
-      const retentionDays = Number(process.env.AUDIT_LOG_RETENTION_DAYS || 180);
+      const retentionDays = await getAuditLogRetentionDays();
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
       const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
