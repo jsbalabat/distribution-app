@@ -98,7 +98,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
 
     if (visibleDocs.length > TransactionDetailScreen._pageSize) {
-      visibleDocs.removeRange(TransactionDetailScreen._pageSize, visibleDocs.length);
+      visibleDocs.removeRange(
+        TransactionDetailScreen._pageSize,
+        visibleDocs.length,
+      );
     }
 
     return _SubmissionPageResult(
@@ -124,9 +127,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     });
 
     try {
-      final page = await _fetchVisiblePage(
-        startAfter: null,
-      );
+      final page = await _fetchVisiblePage(startAfter: null);
 
       if (!mounted) return;
       setState(() {
@@ -152,9 +153,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     });
 
     try {
-      final page = await _fetchVisiblePage(
-        startAfter: _lastDoc,
-      );
+      final page = await _fetchVisiblePage(startAfter: _lastDoc);
 
       if (!mounted) return;
       setState(() {

@@ -81,9 +81,7 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
     });
 
     try {
-      final page = await _fetchVisiblePage(
-        startAfter: null,
-      );
+      final page = await _fetchVisiblePage(startAfter: null);
 
       if (!mounted) return;
       setState(() {
@@ -109,9 +107,7 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
     });
 
     try {
-      final page = await _fetchVisiblePage(
-        startAfter: _lastDoc,
-      );
+      final page = await _fetchVisiblePage(startAfter: _lastDoc);
 
       if (!mounted) return;
       setState(() {

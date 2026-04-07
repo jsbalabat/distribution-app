@@ -235,9 +235,7 @@ class FirestoreService {
       action: 'delete',
       entityType: 'salesRequisition',
       entityId: docId,
-      details: {
-        'softDelete': true,
-      },
+      details: {'softDelete': true},
     );
   }
 
