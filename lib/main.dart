@@ -5,29 +5,31 @@ import 'firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'providers/user_provider.dart';
 import 'app.dart';
+import 'config/firebase_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
+    // Initialize configuration from .env file
+    await FirebaseConfig.initialize();
+
     if (kIsWeb) {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: "AIzaSyBnKzY3JuVx29DlVNVP8dASNITV93ag1e4",
-          authDomain: "sales-field-app-f31a2.firebaseapp.com",
-          projectId: "sales-field-app-f31a2",
-          storageBucket: "sales-field-app-f31a2.firebasestorage.app",
-          messagingSenderId: "856355013052",
-          appId: "1:856355013052:web:dbc0f63e975cf50f36abb9",
-        ),
-      );
+      // Use FirebaseConfig for web
+      await Firebase.initializeApp(options: FirebaseConfig.getWebOptions());
     } else {
+      // Use platform-specific configuration for mobile
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
   } catch (e) {
-    // Handle error if needed
+    // Log error but don't crash - allows graceful degradation
+    debugPrint('Firebase initialization error: $e');
+    if (kDebugMode) {
+      // Show error in debug mode
+      debugPrint('Please ensure .env file is configured correctly');
+    }
   }
 
   runApp(
