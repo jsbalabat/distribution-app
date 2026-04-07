@@ -34,7 +34,10 @@ class ViewReportsScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final docs = (snapshot.data?.docs ?? []).where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return data['isDeleted'] != true;
+          }).toList();
 
           if (docs.isEmpty) {
             return const Center(child: Text('No sales data available.'));

@@ -216,12 +216,28 @@ class FirestoreService {
   }
 
   Future<void> deleteSalesRequisition(String docId) async {
-    await _firestore.collection('salesRequisitions').doc(docId).delete();
+    final docRef = _firestore.collection('salesRequisitions').doc(docId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists) {
+      throw Exception('Sales requisition not found.');
+    }
+
+    await docRef.update({
+      'isDeleted': true,
+      'deletedAt': Timestamp.now(),
+      'deletedBy': _auth.currentUser?.uid,
+      'deletedByEmail': _auth.currentUser?.email,
+      'updatedAt': Timestamp.now(),
+    });
 
     await _auditService.logAction(
       action: 'delete',
       entityType: 'salesRequisition',
       entityId: docId,
+      details: {
+        'softDelete': true,
+      },
     );
   }
 

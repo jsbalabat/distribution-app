@@ -108,7 +108,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
         content: const Text(
-          'Are you sure you want to delete this record?',
+          'Are you sure you want to archive this record? It will be hidden from normal views but kept for recovery and audit.',
           style: TextStyle(color: AppStyles.subtitleColor),
         ),
         actions: [
@@ -136,7 +136,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: const Text('Record deleted.'),
+                  content: const Text('Record archived.'),
                   backgroundColor: AppStyles.secondaryColor,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
@@ -146,7 +146,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               );
             },
-            child: const Text('Delete'),
+            child: const Text('Archive'),
           ),
         ],
       ),

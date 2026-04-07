@@ -66,6 +66,48 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   bool _hasMore = true;
   String? _error;
 
+  bool _isVisibleSubmission(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? <String, dynamic>{};
+    return data['isDeleted'] != true;
+  }
+
+  Future<_SubmissionPageResult> _fetchVisiblePage({
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+  }) async {
+    final visibleDocs = <DocumentSnapshot<Map<String, dynamic>>>[];
+    DocumentSnapshot<Map<String, dynamic>>? cursor = startAfter;
+    var hasMore = true;
+
+    while (visibleDocs.length < TransactionDetailScreen._pageSize && hasMore) {
+      final snapshot = await _firestoreService.fetchUserSubmissionsPage(
+        limit: TransactionDetailScreen._pageSize,
+        startAfter: cursor,
+      );
+
+      if (snapshot.docs.isEmpty) {
+        hasMore = false;
+        break;
+      }
+
+      final pageVisibleDocs = snapshot.docs
+          .where(_isVisibleSubmission)
+          .toList();
+      visibleDocs.addAll(pageVisibleDocs);
+      cursor = snapshot.docs.last;
+      hasMore = snapshot.docs.length == TransactionDetailScreen._pageSize;
+    }
+
+    if (visibleDocs.length > TransactionDetailScreen._pageSize) {
+      visibleDocs.removeRange(TransactionDetailScreen._pageSize, visibleDocs.length);
+    }
+
+    return _SubmissionPageResult(
+      docs: visibleDocs,
+      lastDoc: cursor,
+      hasMore: hasMore,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -82,15 +124,15 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     });
 
     try {
-      final snapshot = await _firestoreService.fetchUserSubmissionsPage(
-        limit: TransactionDetailScreen._pageSize,
+      final page = await _fetchVisiblePage(
+        startAfter: null,
       );
 
       if (!mounted) return;
       setState(() {
-        _docs.addAll(snapshot.docs);
-        _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
-        _hasMore = snapshot.docs.length == TransactionDetailScreen._pageSize;
+        _docs.addAll(page.docs);
+        _lastDoc = page.lastDoc;
+        _hasMore = page.hasMore;
         _isInitialLoading = false;
       });
     } catch (e) {
@@ -110,16 +152,15 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     });
 
     try {
-      final snapshot = await _firestoreService.fetchUserSubmissionsPage(
-        limit: TransactionDetailScreen._pageSize,
+      final page = await _fetchVisiblePage(
         startAfter: _lastDoc,
       );
 
       if (!mounted) return;
       setState(() {
-        _docs.addAll(snapshot.docs);
-        _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : _lastDoc;
-        _hasMore = snapshot.docs.length == TransactionDetailScreen._pageSize;
+        _docs.addAll(page.docs);
+        _lastDoc = page.lastDoc ?? _lastDoc;
+        _hasMore = page.hasMore;
         _isLoadingMore = false;
       });
     } catch (e) {
@@ -488,4 +529,16 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
     return rows;
   }
+}
+
+class _SubmissionPageResult {
+  _SubmissionPageResult({
+    required this.docs,
+    required this.lastDoc,
+    required this.hasMore,
+  });
+
+  final List<DocumentSnapshot<Map<String, dynamic>>> docs;
+  final DocumentSnapshot<Map<String, dynamic>>? lastDoc;
+  final bool hasMore;
 }
