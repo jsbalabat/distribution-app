@@ -43,7 +43,6 @@ migrate_working_dir/
 .pub/
 /build/
 .packages
-pubspec.lock
 
 # Web related
 /web/build/
