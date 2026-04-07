@@ -13,6 +13,8 @@ The app supports:
 - Admin dashboards and reports
 - User and role management
 - Audit logging for major create, update, and delete actions
+- In-app notifications for users and admins
+- Admin Excel upload with direct callable import
 - PDF generation and email workflows for requisitions
 
 ## Key Features
@@ -22,6 +24,7 @@ The app supports:
 - Submit sales requisitions with item lines and totals
 - Review submission history with search and pagination
 - Generate transaction PDFs
+- Receive in-app notifications for key requisition status changes
 
 ### Admin Workflow
 
@@ -29,14 +32,17 @@ The app supports:
 - Manage users and roles
 - Review and edit requisitions
 - Inspect audit logs with filters and CSV copy export
+- Upload Excel files directly from the dashboard to import customers and item data
+- Trigger explicit destructive cleanup (admin-only, confirmation-required)
 - Configure app settings, inventory alerts, and audit-log retention
 
 ### Operational Features
 
 - Firestore-backed data storage
-- Cloud Functions for scheduled cleanup and email operations
+- Cloud Functions for scheduled maintenance, retention pruning, direct import, and email operations
 - Environment-based Firebase config using `.env`
 - Soft-delete support for requisitions so history is preserved
+- Structured import and cleanup logging through Firestore and Cloud Function logs
 
 ## Tech Stack
 
@@ -44,11 +50,13 @@ The app supports:
 - Firebase Auth
 - Cloud Firestore
 - Firebase Cloud Functions
+- Cloud Functions callable client (`cloud_functions`)
 - Provider
 - intl
 - pdf and printing
 - path_provider
 - permission_handler
+- file_picker
 
 ## Project Structure
 
@@ -105,7 +113,11 @@ npm run lint
 
 - Firestore rules enforce role-based access and inventory constraints
 - Audit logs are stored in the `auditLogs` collection
-- Scheduled Cloud Functions prune old audit logs based on the configured retention period
+- Notifications are stored in the `notifications` collection and can be marked as read
+- Import execution summaries are stored in the `dataImports` collection
+- Cleanup run summaries are stored in the `cleanupLogs` collection
+- Scheduled Cloud Functions prune old audit logs based on configured retention
+- Destructive cleanup is available only through an admin callable with explicit `DELETE` confirmation
 - Some screens rely on Firestore indexes for ordered and filtered queries
 
 ## Configuration
@@ -143,12 +155,14 @@ Before production deployment:
 3. Confirm `.env` values are not committed
 4. Run the app on all supported targets
 5. Review retention and cleanup settings in admin configuration
+6. Validate admin direct Excel upload in web and Android builds
 
 ## Known Limitations
 
 - Some advanced features from the review are still future work, such as full CI/CD automation and broader offline support
 - Large data sets still depend on Firestore query performance and indexes
 - PDF and email workflows should be validated on each target platform before production rollout
+- Direct Excel import requires the expected workbook sheet names and currently enforces an upload size limit in Cloud Functions
 
 ## Documentation Status
 

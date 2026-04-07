@@ -102,14 +102,26 @@
 - Consistent styling across platforms
 
 ### 9. **Data Import/Export**
-- Backend support for data imports via Cloud Functions
-- Excel file support (via Node.js backend)
-- Admin-only data import interface
+- Admin dashboard supports direct Excel file upload
+- Admin-only callable import (`importDataFromExcelDirect`) processes workbook uploads
+- Import summaries are persisted in Firestore (`dataImports`) for traceability
 
 ### 10. **Scheduled Data Management**
-- Automated daily cleanup of non-critical data
-- Preserves user accounts and logs
-- Runs at configurable times (default: midnight Manila time)
+- Scheduled maintenance cleanup and dedicated audit-log retention pruning
+- Admin-triggered destructive cleanup is available as a separate explicit action
+- Cleanup outcomes are written to Firestore (`cleanupLogs`) for visibility
+
+### 11. **Notifications & Audit Visibility**
+- In-app notifications screen for users and admins
+- Notification read-state management (`mark as read`, `mark all as read`)
+- Soft-delete workflow for requisitions to preserve history
+- Audit logs screen supports filtered CSV copy export
+
+### 12. **Recent Stability Improvements (April 2026)**
+- Direct upload flow hardened for web and Android file providers
+- Upload logging added in UI and Cloud Functions (`[IMPORT][UI]`, `[IMPORT][DIRECT]`)
+- Notifications query path adjusted to avoid composite-index runtime failures
+- Focused unit/widget test coverage added for core model and utility behavior
 
 ---
 
@@ -236,18 +248,17 @@
 ### 6. **Feature Incompleteness**
 - **Email functionality commented out**: PDF email feature disabled (form_screen.dart lines 18, 38)
 - **Incomplete utils**: `utils/error_types.dart` imported but not fully utilized
-- **No transaction rollback**: Deletes submissions without atomic operations
-- **Missing data exports**: No export to CSV/Excel for users
-- **No audit trail**: Changes not tracked or logged
-- **No bulk operations**: Admin can't bulk update or delete
-- **Recommendation**: Complete email integration, implement audit logs, add bulk operations
+- **No transaction rollback**: Some destructive operations are still non-transactional
+- **Limited export scope**: Audit logs support CSV copy export, but broader export workflows are still limited
+- **No bulk operations**: Admin bulk update/delete flows are still minimal
+- **Recommendation**: Complete email integration, expand export options, and add safe bulk-operation tooling
 
 ### 7. **Testing Gaps**
-- **No unit tests**: `test/widget_test.dart` exists as placeholder only
-- **No integration tests**: No end-to-end test scenarios
+- **Limited unit tests**: Basic coverage exists for models/utilities and a widget smoke test, but not service-heavy flows
+- **No integration tests**: End-to-end test scenarios are still missing
 - **No Firebase mocking**: Tests would require actual Firebase project
 - **No UI tests**: No golden tests or widget tests
-- **Recommendation**: Add unit tests for services, integration tests with Firebase emulator
+- **Recommendation**: Add service-layer unit tests, Firebase-emulator integration tests, and richer UI tests
 
 ### 8. **Database Design Issues**
 - **Inconsistent naming**: Mix of camelCase and snake_case in Firestore (e.g., `timeStamp` vs `timestamp`, `userID` vs `uid`)
@@ -276,7 +287,7 @@
 - **Recommendation**: Add comprehensive documentation, enforce code style with linting
 
 ### 11. **Missing Advanced Features**
-- **No notifications**: Users aren't notified of status changes
+- **No push/device notifications**: In-app notifications exist, but push notifications are not yet implemented
 - **No real-time collaboration**: Only single-user edits per requisition
 - **No undo/redo**: Can't revert accidental changes
 - **No versioning**: Can't compare historical versions of requisitions
@@ -286,7 +297,7 @@
 ### 12. **Dependency & Configuration Issues**
 - **Dependency conflicts**: `cloud_firestore` has overrides - potential version conflicts
 - **Outdated flutter_lints**: May have deprecated rules
-- **No pubspec lock file**: `pubspec.lock` should be committed for reproducible builds
+- **Dependency drift risk**: Keep `pubspec.lock` and functions lockfiles updated during upgrades
 - **Android min SDK**: Set to 21 but web might need different compatibility considerations
 - **Recommendation**: Resolve dependency conflicts, update linting rules, use version pinning
 
@@ -297,11 +308,11 @@
 - **Recommendation**: Use async PDF generation with progress callbacks
 
 ### 14. **Backend Function Issues**
-- **Daily cleanup is aggressive**: Deletes customer/item data daily (retains only users/logs)
-- **No backup before cleanup**: Data loss risk if schedule runs unexpectedly
+- **Destructive cleanup risk remains**: Admin-triggered destructive cleanup is available and should remain tightly controlled
+- **No automatic backup before destructive cleanup**: Still a data loss risk if run accidentally
 - **Timezone hardcoded**: Manila timezone only, not configurable
-- **No cleanup logs accessibility**: Logs stored but not exposed to UI
-- **Recommendation**: Make cleanup policy configurable, add backup strategy, expose logs to admins
+- **Cleanup logs not yet surfaced in dedicated UI**: Logs are written to Firestore but lack a full dashboard view
+- **Recommendation**: Add backup strategy, configurable scheduling/timezone, and cleanup-log reporting screens
 
 ---
 
@@ -341,8 +352,8 @@
 
 ### Medium (Features & Testing)
 9. Implement comprehensive unit and integration tests
-10. Add user notifications for status changes
-11. Implement audit logging for admin actions
+10. Add push notifications and notification preference controls
+11. Expand audit and cleanup log reporting UX
 12. Add search and filter capabilities
 
 ### Low (Polish & Advanced Features)
