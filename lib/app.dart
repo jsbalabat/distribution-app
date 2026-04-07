@@ -28,7 +28,6 @@ class MyApp extends StatelessWidget {
           primary: AppStyles.primaryColor,
           secondary: AppStyles.secondaryColor,
           surface: AppStyles.cardColor,
-          background: AppStyles.scaffoldBackgroundColor,
         ),
         scaffoldBackgroundColor: AppStyles.scaffoldBackgroundColor,
         appBarTheme: AppBarTheme(

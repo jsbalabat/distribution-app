@@ -19,6 +19,21 @@ service cloud.firestore {
       return request.auth.uid == resource.data[userIdField];
     }
 
+    // Allow signed-in users to decrement inventory quantity only.
+    // This supports requisition submission while preventing arbitrary writes.
+    function isValidInventoryDecrement() {
+      let previousQuantity = resource.data.quantity is number
+        ? resource.data.quantity
+        : (resource.data.stock is number ? resource.data.stock : -1);
+
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['quantity'])
+        && request.resource.data.quantity is number
+        && previousQuantity >= 0
+        && request.resource.data.quantity >= 0
+        && request.resource.data.quantity <= previousQuantity;
+    }
+
     // users collection
     // - Users can read and write their own data
     // - Admins can read and update any user (needed for role management)
@@ -80,10 +95,12 @@ service cloud.firestore {
 
     // itemsAvailable collection
     // - All authenticated users can read (for inventory checks)
-    // - Only admins can write (for inventory management)
+    // - Admins can fully manage inventory
+    // - Signed-in users may only decrement quantity during requisition submit
     match /itemsAvailable/{docId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow update: if isAdmin() || isValidInventoryDecrement();
+      allow create, delete: if isAdmin();
     }
 
     // Admin-only collections

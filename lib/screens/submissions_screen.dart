@@ -1,6 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../services/firestore_service.dart';
+import '../utils/requisition_fields.dart';
 
 class SubmissionsScreen extends StatelessWidget {
   const SubmissionsScreen({super.key});
@@ -25,18 +25,25 @@ class SubmissionsScreen extends StatelessWidget {
             itemCount: docs.length,
             itemBuilder: (context, index) {
               final data = docs[index].data() as Map<String, dynamic>;
+              final ts = RequisitionFields.timestamp(data);
               return ListTile(
-                title: Text(data['sorNo'] ?? 'No SOR'),
+                title: Text(RequisitionFields.sorNumber(data)),
                 subtitle: Text("Customer: ${data['customerName'] ?? 'N/A'}"),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text("₱${data['amount'] ?? '0'}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                    if (data['timestamp'] != null)
+                    Text(
+                      "₱${RequisitionFields.totalAmount(data).toStringAsFixed(2)}",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (ts != null)
                       Text(
-                        (data['timestamp'] as Timestamp).toDate().toLocal().toString().split('.')[0],
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ts.toLocal().toString().split('.')[0],
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
                       ),
                   ],
                 ),

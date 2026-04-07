@@ -14,8 +14,22 @@ class FirestoreService {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
+    final now = Timestamp.now();
+    final normalized = {
+      ...formData,
+      'userID': formData['userID'] ?? uid,
+      'uid': formData['uid'] ?? uid,
+      'sorNumber': formData['sorNumber'] ?? formData['sorNo'],
+      'sorNo': formData['sorNo'] ?? formData['sorNumber'],
+      'totalAmount': formData['totalAmount'] ?? formData['amount'] ?? 0,
+      'amount': formData['amount'] ?? formData['totalAmount'] ?? 0,
+      'timeStamp': formData['timeStamp'] ?? formData['timestamp'] ?? now,
+      'timestamp': formData['timestamp'] ?? formData['timeStamp'] ?? now,
+      'createdAt': formData['createdAt'] ?? now,
+    };
+
     try {
-      await _firestore.collection('salesRequisitions').add({...formData});
+      await _firestore.collection('salesRequisitions').add(normalized);
     } on FirebaseException catch (e, st) {
       AppLogger.error(
         'Failed to submit sales requisition',

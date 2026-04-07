@@ -4,11 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../styles/app_styles.dart';
+import '../utils/requisition_fields.dart';
 
 Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
   final pdf = pw.Document();
 
   final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+  final ts = RequisitionFields.timestamp(data);
 
   pdf.addPage(
     pw.MultiPage(
@@ -18,12 +20,10 @@ Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
           style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 10),
-        pw.Text('SOR #: ${data['sorNumber']}'),
+        pw.Text('SOR #: ${RequisitionFields.sorNumber(data)}'),
         pw.Text('Customer: ${data['customerName']}'),
         pw.Text('Account #: ${data['accountNumber']}'),
-        pw.Text(
-          'Date: ${data['timestamp']?.toDate().toString().split(' ')[0]}',
-        ),
+        pw.Text('Date: ${ts?.toString().split(' ')[0] ?? ''}'),
         pw.SizedBox(height: 20),
         pw.TableHelper.fromTextArray(
           headers: ['Item', 'Quantity', 'Unit Price', 'Subtotal'],
@@ -244,7 +244,7 @@ class TransactionDetailScreen extends StatelessWidget {
                       rows.add(
                         DataRow(
                           cells: [
-                            DataCell(Text(data['sorNumber'] ?? '')),
+                            DataCell(Text(RequisitionFields.sorNumber(data))),
                             DataCell(Text(data['customerName'] ?? '')),
                             DataCell(Text(data['accountNumber'] ?? '')),
                             DataCell(Text(item['name'] ?? '')),

@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 import 'package:pdf/widgets.dart' as pw;
+import '../utils/requisition_fields.dart';
 
 Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
   final pdf = pw.Document();
 
   final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+  final ts = RequisitionFields.timestamp(data);
 
   pdf.addPage(
     pw.MultiPage(
@@ -14,12 +16,10 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
           style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 10),
-        pw.Text('SOR #: ${data['sorNumber']}'),
+        pw.Text('SOR #: ${RequisitionFields.sorNumber(data)}'),
         pw.Text('Customer: ${data['customerName']}'),
         pw.Text('Account #: ${data['accountNumber']}'),
-        pw.Text(
-          'Date: ${data['timeStamp']?.toDate().toString().split(' ')[0] ?? ''}',
-        ),
+        pw.Text('Date: ${ts?.toString().split(' ')[0] ?? ''}'),
         pw.Text('Sender: ${data['accountNumber']}'),
         pw.SizedBox(height: 20),
         pw.TableHelper.fromTextArray(
@@ -47,7 +47,7 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
         pw.Text('Remarks: ${data['remarks'] ?? 'No remarks'}'),
         pw.SizedBox(height: 10),
         pw.Text(
-          'Total Amount (in pesos): ${data['totalAmount'] ?? '0.00'}',
+          'Total Amount (in pesos): ${RequisitionFields.totalAmount(data).toStringAsFixed(2)}',
           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
         ),
       ],

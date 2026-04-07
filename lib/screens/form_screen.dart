@@ -35,8 +35,6 @@ class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormState>();
   int _currentStep = 0;
 
-  final String _remarks = '';
-
   final _deliveryInstructionController = TextEditingController();
   final _invoiceNumberController = TextEditingController();
   final _itemDescriptionController = TextEditingController();
@@ -55,7 +53,6 @@ class _FormScreenState extends State<FormScreen> {
   double? _unsecuredFunds;
 
   Map<String, dynamic>? _selectedCustomer;
-  DateTime? _requestDate;
   DateTime? _dispatchDate;
   DateTime? _invoiceDate;
 
@@ -496,11 +493,13 @@ class _FormScreenState extends State<FormScreen> {
       final itemSnapshot = await itemRef.get();
 
       if (itemSnapshot.exists) {
-        final currentStock = itemSnapshot.data()?['quantity'] ?? 0;
-        final updatedStock = (currentStock - purchasedQty).clamp(
-          0,
-          double.infinity,
-        );
+        final itemData = itemSnapshot.data() ?? {};
+        final currentStock =
+            (itemData['quantity'] ?? itemData['stock'] ?? 0) as num;
+        final updatedStock =
+            (currentStock.toInt() - (purchasedQty as num).toInt())
+                .clamp(0, double.infinity)
+                .toInt();
 
         await itemRef.update({'quantity': updatedStock});
       }
@@ -547,6 +546,11 @@ class _FormScreenState extends State<FormScreen> {
         'userID': FirebaseAuth.instance.currentUser?.uid,
         'timeStamp': now,
         'createdAt': now, // Added for daily SOR counter
+        // Backward-compatible aliases for legacy readers
+        'amount': _calculateTotal(),
+        'sorNo': _sorNumber,
+        'timestamp': now,
+        'uid': FirebaseAuth.instance.currentUser?.uid,
         // 'recipientEmail': _emailController.text,
         'attachedFileName': _selectedFileName,
       };

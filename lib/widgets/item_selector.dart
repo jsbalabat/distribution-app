@@ -148,7 +148,7 @@ class ItemSelector extends StatelessWidget {
                   : ListView.separated(
                       shrinkWrap: true,
                       itemCount: filteredItems.length,
-                      separatorBuilder: (_, __) =>
+                      separatorBuilder: (_, _) =>
                           Divider(height: 1, color: Colors.grey.shade200),
                       itemBuilder: (_, index) {
                         final item = filteredItems[index];
