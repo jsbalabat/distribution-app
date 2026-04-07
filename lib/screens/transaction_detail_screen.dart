@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../services/firestore_service.dart';
 import '../styles/app_styles.dart';
 import '../utils/requisition_fields.dart';
 
@@ -45,14 +45,93 @@ Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
   await Printing.layoutPdf(onLayout: (format) async => pdf.save());
 }
 
-class TransactionDetailScreen extends StatelessWidget {
-  static const int _maxTransactionRecords = 100;
+class TransactionDetailScreen extends StatefulWidget {
+  static const int _pageSize = 20;
 
   const TransactionDetailScreen({super.key});
 
   @override
+  State<TransactionDetailScreen> createState() =>
+      _TransactionDetailScreenState();
+}
+
+class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
+  final List<DocumentSnapshot<Map<String, dynamic>>> _docs = [];
+
+  DocumentSnapshot<Map<String, dynamic>>? _lastDoc;
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitial();
+  }
+
+  Future<void> _loadInitial() async {
+    setState(() {
+      _isInitialLoading = true;
+      _error = null;
+      _hasMore = true;
+      _lastDoc = null;
+      _docs.clear();
+    });
+
+    try {
+      final snapshot = await _firestoreService.fetchUserSubmissionsPage(
+        limit: TransactionDetailScreen._pageSize,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _docs.addAll(snapshot.docs);
+        _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+        _hasMore = snapshot.docs.length == TransactionDetailScreen._pageSize;
+        _isInitialLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isInitialLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || _lastDoc == null) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final snapshot = await _firestoreService.fetchUserSubmissionsPage(
+        limit: TransactionDetailScreen._pageSize,
+        startAfter: _lastDoc,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _docs.addAll(snapshot.docs);
+        _lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : _lastDoc;
+        _hasMore = snapshot.docs.length == TransactionDetailScreen._pageSize;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoadingMore = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
       backgroundColor: AppStyles.backgroundColor,
       appBar: AppBar(
@@ -83,9 +162,7 @@ class TransactionDetailScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Refresh',
-            onPressed: () {
-              // Refresh functionality would go here
-            },
+            onPressed: _loadInitial,
           ),
         ],
       ),
@@ -125,21 +202,9 @@ class TransactionDetailScreen extends StatelessWidget {
                     children: [
                       Text('Transaction Details', style: AppStyles.titleStyle),
                       const SizedBox(height: AppStyles.spacingXS),
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('salesRequisitions')
-                            .where('userID', isEqualTo: uid)
-                            .limit(_maxTransactionRecords)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          int totalTransactions = snapshot.hasData
-                              ? snapshot.data!.docs.length
-                              : 0;
-                          return Text(
-                            'Showing recent $totalTransactions transactions (max $_maxTransactionRecords)',
-                            style: AppStyles.subtitleStyle,
-                          );
-                        },
+                      Text(
+                        'Loaded ${_docs.length} transactions',
+                        style: AppStyles.subtitleStyle,
                       ),
                     ],
                   ),
@@ -183,7 +248,6 @@ class TransactionDetailScreen extends StatelessWidget {
             child: Text('Transaction Items', style: AppStyles.titleStyle),
           ),
 
-          // Table (preserved as is)
           Expanded(
             child: Card(
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -191,24 +255,31 @@ class TransactionDetailScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               elevation: 2,
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('salesRequisitions')
-                    .where('userID', isEqualTo: uid)
-                    .orderBy('timeStamp', descending: true)
-                    .limit(_maxTransactionRecords)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
+              child: _isInitialLoading
+                  ? const Center(
                       child: CircularProgressIndicator(
                         color: AppStyles.primaryColor,
                       ),
-                    );
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(
+                    )
+                  : _error != null && _docs.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            ElevatedButton(
+                              onPressed: _loadInitial,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : _docs.isEmpty
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -228,115 +299,110 @@ class TransactionDetailScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                    );
-                  }
-
-                  final rows = <DataRow>[];
-
-                  for (var doc in snapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final items = data['items'] as List<dynamic>? ?? [];
-
-                    // Format the timestamp for better display
-                    // final timestamp = data['timeStamp'] as Timestamp?;
-                    // final date = timestamp?.toDate();
-                    // final formattedDate = date != null
-                    //     ? DateFormat('MMM d, yyyy').format(date)
-                    //     : 'Unknown Date';
-
-                    for (var item in items) {
-                      rows.add(
-                        DataRow(
-                          cells: [
-                            DataCell(Text(RequisitionFields.sorNumber(data))),
-                            DataCell(Text(data['customerName'] ?? '')),
-                            DataCell(Text(data['accountNumber'] ?? '')),
-                            DataCell(Text(item['name'] ?? '')),
-                            DataCell(Text(item['quantity'].toString())),
-                            DataCell(Text('₱${item['unitPrice'] ?? 0}')),
-                            DataCell(Text('₱${item['subtotal'] ?? 0}')),
-                            DataCell(
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.picture_as_pdf,
-                                  color: AppStyles.secondaryColor,
-                                ),
-                                tooltip: 'Download PDF',
-                                onPressed: () {
-                                  _generateAndPrintPDF(data);
-                                },
+                    )
+                  : Column(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SingleChildScrollView(
+                              child: DataTable(
+                                headingRowColor:
+                                    WidgetStateProperty.resolveWith(
+                                      (_) => AppStyles.primaryColor.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                    ),
+                                columns: const [
+                                  DataColumn(
+                                    label: Text(
+                                      'SOR Number',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'Customer',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'Account #',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'Item',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'Qty',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'Unit Price',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'Subtotal',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      'PDF',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                rows: _buildRows(),
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      );
-                    }
-                  }
-
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SingleChildScrollView(
-                      child: DataTable(
-                        headingRowColor: WidgetStateProperty.resolveWith(
-                          (_) => AppStyles.primaryColor.withValues(alpha: 0.1),
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: _isLoadingMore
+                              ? const CircularProgressIndicator(
+                                  color: AppStyles.primaryColor,
+                                )
+                              : _hasMore
+                              ? OutlinedButton(
+                                  onPressed: _loadMore,
+                                  child: const Text('Load More'),
+                                )
+                              : const Text(
+                                  'End of transactions',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
                         ),
-                        columns: const [
-                          DataColumn(
-                            label: Text(
-                              'SOR Number',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Customer',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Account #',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Item',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Qty',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Unit Price',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'Subtotal',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          DataColumn(
-                            label: Text(
-                              'PDF',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                        rows: rows,
-                        // Core table styling preserved
-                      ),
+                      ],
                     ),
-                  );
-                },
-              ),
             ),
           ),
         ],
@@ -362,5 +428,44 @@ class TransactionDetailScreen extends StatelessWidget {
         child: const Icon(Icons.file_download, color: Colors.white),
       ),
     );
+  }
+
+  List<DataRow> _buildRows() {
+    final rows = <DataRow>[];
+
+    for (final doc in _docs) {
+      final data = doc.data() ?? <String, dynamic>{};
+      final items = data['items'] as List<dynamic>? ?? [];
+
+      for (final item in items) {
+        rows.add(
+          DataRow(
+            cells: [
+              DataCell(Text(RequisitionFields.sorNumber(data))),
+              DataCell(Text(data['customerName'] ?? '')),
+              DataCell(Text(data['accountNumber'] ?? '')),
+              DataCell(Text(item['name'] ?? '')),
+              DataCell(Text(item['quantity'].toString())),
+              DataCell(Text('₱${item['unitPrice'] ?? 0}')),
+              DataCell(Text('₱${item['subtotal'] ?? 0}')),
+              DataCell(
+                IconButton(
+                  icon: const Icon(
+                    Icons.picture_as_pdf,
+                    color: AppStyles.secondaryColor,
+                  ),
+                  tooltip: 'Download PDF',
+                  onPressed: () {
+                    _generateAndPrintPDF(data);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    return rows;
   }
 }

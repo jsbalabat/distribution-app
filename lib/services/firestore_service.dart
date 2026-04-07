@@ -132,6 +132,27 @@ class FirestoreService {
         .snapshots();
   }
 
+  // Cursor-based pagination for user submissions
+  Future<QuerySnapshot<Map<String, dynamic>>> fetchUserSubmissionsPage({
+    int limit = 20,
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception("User not authenticated");
+
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('salesRequisitions')
+        .where('userID', isEqualTo: uid)
+        .orderBy('timeStamp', descending: true)
+        .limit(limit);
+
+    if (startAfter != null) {
+      query = query.startAfterDocument(startAfter);
+    }
+
+    return query.get();
+  }
+
   // Optional: Fetch customer or item lists
   Stream<QuerySnapshot> getCustomers() =>
       _firestore.collection('customers').snapshots();
