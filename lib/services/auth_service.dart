@@ -2,6 +2,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
+import '../utils/app_logger.dart';
+import '../utils/error_mapper.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -31,7 +33,13 @@ class AuthService {
             .set(defaultUser.toMap());
         return defaultUser;
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.error(
+        'Failed to load current user profile',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
       return null;
     }
   }
@@ -51,8 +59,22 @@ class AuthService {
         return await getCurrentUser();
       }
       return null;
-    } catch (e) {
-      rethrow;
+    } on FirebaseAuthException catch (e, st) {
+      AppLogger.error(
+        'Sign-in failed for email/password flow',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      throw Exception(ErrorMapper.mapAuthError(e.code));
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected sign-in error',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      throw Exception('Unable to sign in right now. Please try again.');
     }
   }
 
@@ -85,7 +107,13 @@ class AuthService {
               .set(defaultUser.toMap());
           return defaultUser;
         }
-      } catch (e) {
+      } catch (e, st) {
+        AppLogger.error(
+          'Failed to process auth state change user profile',
+          error: e,
+          stackTrace: st,
+          tag: 'AUTH',
+        );
         return null;
       }
     });

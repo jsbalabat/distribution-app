@@ -55,7 +55,10 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        final raw = e.toString();
+        _errorMessage = raw.startsWith('Exception: ')
+            ? raw.substring('Exception: '.length)
+            : raw;
       });
     } finally {
       // Check if widget is still mounted before setting state

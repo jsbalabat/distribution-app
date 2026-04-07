@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/item_model.dart';
 import '../models/user_model.dart';
+import '../utils/app_logger.dart';
+import '../utils/error_mapper.dart';
 
 class FirestoreService {
   final _firestore = FirebaseFirestore.instance;
@@ -12,7 +14,27 @@ class FirestoreService {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
-    await _firestore.collection('salesRequisitions').add({...formData});
+    try {
+      await _firestore.collection('salesRequisitions').add({...formData});
+    } on FirebaseException catch (e, st) {
+      AppLogger.error(
+        'Failed to submit sales requisition',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      throw Exception(
+        ErrorMapper.mapFirestoreError(e.code, action: 'Submitting requisition'),
+      );
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected error while submitting sales requisition',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      throw Exception('Unable to submit requisition right now.');
+    }
   }
 
   Future<Map<String, dynamic>?> fetchItemPrice(String itemCode) async {
@@ -27,7 +49,21 @@ class FirestoreService {
         return snapshot.docs.first.data();
       }
       return null;
-    } catch (e) {
+    } on FirebaseException catch (e, st) {
+      AppLogger.error(
+        'Failed to fetch item price for code: $itemCode',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      return null;
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected error while fetching item price for code: $itemCode',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
       return null;
     }
   }
@@ -40,9 +76,29 @@ class FirestoreService {
   }
 
   Future<void> updateItemStock(String id, int quantity) async {
-    await _firestore.collection('itemsAvailable').doc(id).update({
-      'quantity': quantity,
-    });
+    try {
+      await _firestore.collection('itemsAvailable').doc(id).update({
+        'quantity': quantity,
+      });
+    } on FirebaseException catch (e, st) {
+      AppLogger.error(
+        'Failed to update item stock for item: $id',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      throw Exception(
+        ErrorMapper.mapFirestoreError(e.code, action: 'Updating item stock'),
+      );
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected error while updating item stock for item: $id',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      throw Exception('Unable to update stock right now.');
+    }
   }
 
   // Stream user’s submissions

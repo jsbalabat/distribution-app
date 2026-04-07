@@ -1,6 +1,7 @@
 // lib/config/firebase_config.dart
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
+import '../utils/app_logger.dart';
 
 /// Firebase configuration loaded from environment variables
 class FirebaseConfig {
@@ -35,7 +36,13 @@ class FirebaseConfig {
           'Please ensure .env file is properly configured.',
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.error(
+        'Failed to initialize FirebaseConfig from .env',
+        error: e,
+        stackTrace: st,
+        tag: 'CONFIG',
+      );
       throw Exception('Failed to load Firebase configuration: $e');
     }
   }

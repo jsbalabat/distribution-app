@@ -2,6 +2,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../utils/app_logger.dart';
 
 class UserProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -26,10 +27,20 @@ class UserProvider with ChangeNotifier {
     notifyListeners();
 
     // Listen to auth changes
-    _authService.userStream.listen((user) {
-      _currentUser = user;
-      notifyListeners();
-    });
+    _authService.userStream.listen(
+      (user) {
+        _currentUser = user;
+        notifyListeners();
+      },
+      onError: (error, stackTrace) {
+        AppLogger.error(
+          'Auth user stream emitted an error',
+          error: error,
+          stackTrace: stackTrace is StackTrace ? stackTrace : null,
+          tag: 'PROVIDER',
+        );
+      },
+    );
   }
 
   Future<bool> signIn(String email, String password) async {
@@ -44,7 +55,13 @@ class UserProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return _currentUser != null;
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.error(
+        'UserProvider signIn failed',
+        error: e,
+        stackTrace: st,
+        tag: 'PROVIDER',
+      );
       _isLoading = false;
       notifyListeners();
       rethrow;

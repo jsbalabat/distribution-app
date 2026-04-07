@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'providers/user_provider.dart';
 import 'app.dart';
 import 'config/firebase_config.dart';
+import 'utils/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,13 +24,13 @@ void main() async {
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
-  } catch (e) {
-    // Log error but don't crash - allows graceful degradation
-    debugPrint('Firebase initialization error: $e');
-    if (kDebugMode) {
-      // Show error in debug mode
-      debugPrint('Please ensure .env file is configured correctly');
-    }
+  } catch (e, st) {
+    AppLogger.error(
+      'Firebase initialization failed',
+      error: e,
+      stackTrace: st,
+      tag: 'STARTUP',
+    );
   }
 
   runApp(
