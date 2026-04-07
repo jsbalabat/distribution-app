@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../styles/app_styles.dart';
 
@@ -45,6 +48,81 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
     }).toList();
   }
 
+  String _escapeCsvField(Object? value) {
+    final text = value?.toString() ?? '';
+    if (text.contains(',') || text.contains('"') || text.contains('\n')) {
+      return '"${text.replaceAll('"', '""')}"';
+    }
+    return text;
+  }
+
+  Future<void> _exportFilteredLogs() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('auditLogs')
+          .orderBy('timestamp', descending: true)
+          .limit(300)
+          .get();
+
+      final filtered = _applyFilters(snapshot.docs);
+
+      if (filtered.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No filtered audit logs to export.')),
+        );
+        return;
+      }
+
+      final buffer = StringBuffer();
+      buffer.writeln(
+        'timestamp,action,entityType,entityId,actorEmail,actorId,details',
+      );
+
+      for (final doc in filtered) {
+        final data = doc.data();
+        final timestampValue = data['timestamp'];
+        final timestamp = timestampValue is Timestamp
+            ? DateFormat('y-MM-dd HH:mm:ss').format(timestampValue.toDate())
+            : '';
+        final details =
+            (data['details'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+
+        buffer.writeln(
+          [
+            timestamp,
+            data['action'],
+            data['entityType'],
+            data['entityId'],
+            data['actorEmail'],
+            data['actorId'],
+            jsonEncode(details),
+          ].map(_escapeCsvField).join(','),
+        );
+      }
+
+      await Clipboard.setData(ClipboardData(text: buffer.toString()));
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Copied ${filtered.length} audit logs as CSV to clipboard.',
+          ),
+          backgroundColor: AppStyles.successColor,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to export audit logs: $error'),
+          backgroundColor: AppStyles.errorColor,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -54,6 +132,13 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
         backgroundColor: AppStyles.adminPrimaryColor,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
+        actions: [
+          IconButton(
+            onPressed: _exportFilteredLogs,
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'Copy CSV',
+          ),
+        ],
       ),
       body: Column(
         children: [
