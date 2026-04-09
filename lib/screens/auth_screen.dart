@@ -15,6 +15,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _companyIdentifierController = TextEditingController();
 
   bool _isLoading = false;
   String _errorMessage = '';
@@ -23,6 +24,7 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _companyIdentifierController.dispose();
     super.dispose();
   }
 
@@ -43,6 +45,7 @@ class _AuthScreenState extends State<AuthScreen> {
       await userProvider.signIn(
         _emailController.text.trim(),
         _passwordController.text.trim(),
+        companyIdentifier: _companyIdentifierController.text.trim(),
       );
 
       // Check if widget is still mounted before setting state
@@ -116,6 +119,28 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
+
+                      // Company identifier selector
+                      TextFormField(
+                        controller: _companyIdentifierController,
+                        decoration: InputDecoration(
+                          labelText: 'Company Identifier',
+                          prefixIcon: const Icon(Icons.account_tree_outlined),
+                          helperText:
+                              'Enter your company identifier (for example: acme, northstar, company-a).',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        validator: (value) {
+                          final text = value?.trim() ?? '';
+                          if (text.isEmpty) {
+                            return 'Please enter your company identifier';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
 
                       // Email field
                       TextFormField(

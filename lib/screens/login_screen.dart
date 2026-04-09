@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service.dart';
 import '../styles/app_styles.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -10,8 +11,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _authService = AuthService();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _companyIdentifierController = TextEditingController();
   bool _loading = false;
   String? _emailError;
   String? _passwordError;
@@ -20,7 +23,14 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _companyIdentifierController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _companyIdentifierController.text = '';
   }
 
   Future<void> _login() async {
@@ -53,6 +63,13 @@ class _LoginScreenState extends State<LoginScreen> {
       isValid = false;
     }
 
+    if (_companyIdentifierController.text.trim().isEmpty) {
+      setState(() {
+        _emailError = "Company identifier is required";
+      });
+      isValid = false;
+    }
+
     if (!isValid) {
       setState(() {
         _loading = false;
@@ -61,9 +78,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      await _authService.signInWithEmailAndPassword(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+        companyIdentifier: _companyIdentifierController.text.trim(),
       );
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
@@ -159,6 +177,34 @@ class _LoginScreenState extends State<LoginScreen> {
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                             color: AppStyles.textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Company Identifier Field
+                        const Text(
+                          "Company Identifier",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: AppStyles.textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _companyIdentifierController,
+                          style: const TextStyle(color: AppStyles.textColor),
+                          decoration: InputDecoration(
+                            hintText: "Enter company identifier (e.g. acme)",
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.account_tree_outlined,
+                              color: AppStyles.primaryColor,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 20),

@@ -2,6 +2,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/firestore_tenant.dart';
 import '../utils/app_logger.dart';
 
 class UserProvider with ChangeNotifier {
@@ -21,6 +22,8 @@ class UserProvider with ChangeNotifier {
   Future<void> _initUser() async {
     _isLoading = true;
     notifyListeners();
+
+    await FirestoreTenant.instance.loadFromStorage();
 
     _currentUser = await _authService.getCurrentUser();
     _isLoading = false;
@@ -43,7 +46,12 @@ class UserProvider with ChangeNotifier {
     );
   }
 
-  Future<bool> signIn(String email, String password) async {
+  Future<bool> signIn(
+    String email,
+    String password, {
+    String? companyIdentifier,
+    String? databaseId,
+  }) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -51,6 +59,8 @@ class UserProvider with ChangeNotifier {
       _currentUser = await _authService.signInWithEmailAndPassword(
         email,
         password,
+        companyIdentifier: companyIdentifier,
+        databaseId: databaseId,
       );
       _isLoading = false;
       notifyListeners();
