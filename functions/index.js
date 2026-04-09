@@ -134,6 +134,19 @@ function normalizeCompanyIdentifier(identifier) {
 }
 
 /**
+ * Validates user role value for admin user management callables.
+ * @param {string} role User role value.
+ * @return {string} Normalized role.
+ */
+function normalizeUserRole(role) {
+  const normalized = (role || "user").toString().trim().toLowerCase();
+  if (normalized !== "admin" && normalized !== "user") {
+    throw new HttpsError("invalid-argument", "role must be either admin or user.");
+  }
+  return normalized;
+}
+
+/**
  * Deletes query results in batches of up to 500 documents.
  * @param {FirebaseFirestore.Query<FirebaseFirestore.DocumentData>} query Firestore query with batch limit applied.
  * @return {Promise<number>} Total number of deleted documents.
@@ -1140,6 +1153,265 @@ exports.upsertCompanyTenant = onCall(
         firestoreDatabaseId: firestoreDatabaseId,
         isActive: isActive,
         operation: existing.exists ? "updated" : "created",
+      };
+    },
+);
+
+// ========================================
+// TENANT USER MANAGEMENT (admin only)
+// ========================================
+
+exports.adminCreateUserInTenant = onCall(
+    {
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in.");
+      }
+
+      const callerUid = request.auth.uid;
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+      const adminAllowed = await isAdminUser(callerUid, tenantDb);
+
+      if (!adminAllowed) {
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const email = ((request.data && request.data.email) || "").toString().trim().toLowerCase();
+      const password = ((request.data && request.data.password) || "").toString();
+      const name = ((request.data && request.data.name) || "").toString().trim();
+      const role = normalizeUserRole((request.data && request.data.role) || "user");
+      const isDisabled = request.data && request.data.isDisabled === true;
+      const companyId = ((request.data && request.data.actorCompanyIdentifier) || tenant.companyId || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+
+      if (!email || !password || !name) {
+        throw new HttpsError("invalid-argument", "email, password, and name are required.");
+      }
+
+      if (password.length < 6) {
+        throw new HttpsError("invalid-argument", "Password must be at least 6 characters.");
+      }
+
+      try {
+        let authUser;
+        let attachedExistingAuthUser = false;
+
+        try {
+          authUser = await admin.auth().getUserByEmail(email);
+          attachedExistingAuthUser = true;
+        } catch (error) {
+          if (!error || error.code !== "auth/user-not-found") {
+            throw error;
+          }
+
+          authUser = await admin.auth().createUser({
+            email: email,
+            password: password,
+            displayName: name,
+            disabled: isDisabled,
+          });
+        }
+
+        const authUpdate = {
+          displayName: name,
+          disabled: isDisabled,
+          ...(attachedExistingAuthUser && password ? {password: password} : {}),
+        };
+
+        await admin.auth().updateUser(authUser.uid, authUpdate);
+
+        await tenantDb.collection("users").doc(authUser.uid).set({
+          email: email,
+          name: name,
+          role: role,
+          companyId: companyId,
+          firestoreDatabaseId: tenant.databaseId,
+          isDisabled: isDisabled,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdBy: callerUid,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await tenantDb.collection("auditLogs").add({
+          action: "createUser",
+          entityType: "user",
+          entityId: authUser.uid,
+          details: {
+            email: email,
+            role: role,
+            isDisabled: isDisabled,
+          },
+          actorUid: callerUid,
+          actorEmail: request.auth.token.email || "unknown",
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        return {
+          success: true,
+          uid: authUser.uid,
+          email: email,
+          role: role,
+          attachedExistingAuthUser: attachedExistingAuthUser,
+        };
+      } catch (error) {
+        throw new HttpsError("internal", `Failed to create user: ${error.message}`);
+      }
+    },
+);
+
+exports.adminUpdateUserInTenant = onCall(
+    {
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in.");
+      }
+
+      const callerUid = request.auth.uid;
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+      const adminAllowed = await isAdminUser(callerUid, tenantDb);
+
+      if (!adminAllowed) {
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const targetUid = ((request.data && request.data.targetUid) || "").toString().trim();
+      const name = ((request.data && request.data.name) || "").toString().trim();
+      const email = ((request.data && request.data.email) || "").toString().trim().toLowerCase();
+      const role = normalizeUserRole((request.data && request.data.role) || "user");
+      const password = ((request.data && request.data.password) || "").toString();
+      const isDisabled = request.data && request.data.isDisabled === true;
+      const companyId = ((request.data && request.data.actorCompanyIdentifier) || tenant.companyId || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+
+      if (!targetUid || !name || !email) {
+        throw new HttpsError("invalid-argument", "targetUid, email, and name are required.");
+      }
+
+      if (targetUid === callerUid && role !== "admin") {
+        throw new HttpsError("invalid-argument", "You cannot remove your own admin role.");
+      }
+
+      const userRef = tenantDb.collection("users").doc(targetUid);
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        throw new HttpsError("not-found", "Target user profile was not found in this tenant.");
+      }
+
+      const authUpdate = {
+        email: email,
+        displayName: name,
+        disabled: isDisabled,
+        ...(password ? {password: password} : {}),
+      };
+
+      try {
+        await admin.auth().updateUser(targetUid, authUpdate);
+
+        await userRef.set({
+          email: email,
+          name: name,
+          role: role,
+          companyId: companyId,
+          firestoreDatabaseId: tenant.databaseId,
+          isDisabled: isDisabled,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedBy: callerUid,
+        }, {merge: true});
+
+        await tenantDb.collection("auditLogs").add({
+          action: "updateUser",
+          entityType: "user",
+          entityId: targetUid,
+          details: {
+            email: email,
+            role: role,
+            isDisabled: isDisabled,
+            passwordUpdated: Boolean(password),
+          },
+          actorUid: callerUid,
+          actorEmail: request.auth.token.email || "unknown",
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        return {
+          success: true,
+          uid: targetUid,
+        };
+      } catch (error) {
+        if (error && error.code === "auth/user-not-found") {
+          throw new HttpsError("not-found", "Target Firebase Auth user does not exist.");
+        }
+        if (error && error.code === "auth/email-already-exists") {
+          throw new HttpsError("already-exists", "Another account already uses that email.");
+        }
+        throw new HttpsError("internal", `Failed to update user: ${error.message}`);
+      }
+    },
+);
+
+exports.adminDeleteUserInTenant = onCall(
+    {
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in.");
+      }
+
+      const callerUid = request.auth.uid;
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+      const adminAllowed = await isAdminUser(callerUid, tenantDb);
+
+      if (!adminAllowed) {
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const targetUid = ((request.data && request.data.targetUid) || "").toString().trim();
+      if (!targetUid) {
+        throw new HttpsError("invalid-argument", "targetUid is required.");
+      }
+
+      if (targetUid === callerUid) {
+        throw new HttpsError("invalid-argument", "You cannot delete your own account.");
+      }
+
+      try {
+        await admin.auth().deleteUser(targetUid);
+      } catch (error) {
+        if (!error || error.code !== "auth/user-not-found") {
+          throw new HttpsError("internal", `Failed to delete auth user: ${error.message}`);
+        }
+      }
+
+      await tenantDb.collection("users").doc(targetUid).delete();
+
+      await tenantDb.collection("auditLogs").add({
+        action: "deleteUser",
+        entityType: "user",
+        entityId: targetUid,
+        details: {},
+        actorUid: callerUid,
+        actorEmail: request.auth.token.email || "unknown",
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        uid: targetUid,
       };
     },
 );

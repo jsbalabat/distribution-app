@@ -7,6 +7,7 @@ class UserModel {
   final String companyId;
   final String companyName;
   final String firestoreDatabaseId;
+  final bool isDisabled;
 
   UserModel({
     required this.uid,
@@ -16,6 +17,7 @@ class UserModel {
     this.companyId = '',
     this.companyName = '',
     this.firestoreDatabaseId = '(default)',
+    this.isDisabled = false,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> data, String id) {
@@ -28,6 +30,7 @@ class UserModel {
       companyName: data['companyName'] ?? '',
       firestoreDatabaseId:
           data['firestoreDatabaseId'] ?? data['databaseId'] ?? '(default)',
+      isDisabled: data['isDisabled'] == true,
     );
   }
 
@@ -39,6 +42,7 @@ class UserModel {
       'companyId': companyId,
       'companyName': companyName,
       'firestoreDatabaseId': firestoreDatabaseId,
+      'isDisabled': isDisabled,
     };
   }
 
