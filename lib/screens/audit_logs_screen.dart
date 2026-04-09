@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../services/firestore_tenant.dart';
 import '../styles/app_styles.dart';
 
 class AuditLogsScreen extends StatefulWidget {
@@ -58,7 +59,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
 
   Future<void> _exportFilteredLogs() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
+      final snapshot = await FirestoreTenant.instance.firestore
           .collection('auditLogs')
           .orderBy('timestamp', descending: true)
           .limit(300)
@@ -221,7 +222,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           const SizedBox(height: 4),
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
+              stream: FirestoreTenant.instance.firestore
                   .collection('auditLogs')
                   .orderBy('timestamp', descending: true)
                   .limit(300)

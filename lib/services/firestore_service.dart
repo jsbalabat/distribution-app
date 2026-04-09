@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/item_model.dart';
 import '../models/user_model.dart';
 import 'audit_service.dart';
+import 'firestore_tenant.dart';
 import 'notification_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
@@ -10,10 +11,12 @@ import '../utils/error_mapper.dart';
 class FirestoreService {
   static const int defaultSubmissionLimit = 100;
 
-  final _firestore = FirebaseFirestore.instance;
+  final _tenant = FirestoreTenant.instance;
   final _auth = FirebaseAuth.instance;
   final _auditService = AuditService();
   final _notificationService = NotificationService.instance;
+
+  FirebaseFirestore get _firestore => _tenant.firestore;
 
   // Save a new SOR form
   Future<void> submitSOR(Map<String, dynamic> formData) async {

@@ -130,16 +130,13 @@ class AuthService {
           }, SetOptions(merge: true));
         }
 
-        return UserModel.fromMap(
-          {
-            ...profileData,
-            if (identifier != null && identifier.isNotEmpty)
-              'companyId': profileData['companyId'] ?? identifier,
-            'firestoreDatabaseId':
-                profileData['firestoreDatabaseId'] ?? resolvedDatabaseId,
-          },
-          result.user!.uid,
-        );
+        return UserModel.fromMap({
+          ...profileData,
+          if (identifier != null && identifier.isNotEmpty)
+            'companyId': profileData['companyId'] ?? identifier,
+          'firestoreDatabaseId':
+              profileData['firestoreDatabaseId'] ?? resolvedDatabaseId,
+        }, result.user!.uid);
       }
       return null;
     } on FirebaseAuthException catch (e, st) {

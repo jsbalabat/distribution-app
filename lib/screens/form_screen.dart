@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 // import 'dart:math';
 import '../services/firestore_service.dart';
+import '../services/firestore_tenant.dart';
 import '../models/item_model.dart';
 import '../widgets/customer_section.dart';
 import '../widgets/items_section.dart';
@@ -80,7 +81,7 @@ class _FormScreenState extends State<FormScreen> {
   bool _isSubmitting = false; // Track form submission state
 
   void _loadCustomers() async {
-    final snapshot = await FirebaseFirestore.instance
+    final snapshot = await FirestoreTenant.instance.firestore
         .collection('customers')
         .get();
 
@@ -245,7 +246,7 @@ class _FormScreenState extends State<FormScreen> {
 
       try {
         // Query all SORs created today by checking the createdAt timestamp
-        final snapshot = await FirebaseFirestore.instance
+        final snapshot = await FirestoreTenant.instance.firestore
             .collection('salesRequisitions')
             .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
             .where('createdAt', isLessThanOrEqualTo: endOfDay)
@@ -260,7 +261,7 @@ class _FormScreenState extends State<FormScreen> {
       } catch (e) {
         // Fallback: Try filtering client-side if query fails
         try {
-          final snapshot = await FirebaseFirestore.instance
+          final snapshot = await FirestoreTenant.instance.firestore
               .collection('salesRequisitions')
               .orderBy('createdAt', descending: true)
               .limit(100)
@@ -298,7 +299,7 @@ class _FormScreenState extends State<FormScreen> {
 
   Future<void> fetchAccountReceivable(String accountNumber) async {
     try {
-      final snapshot = await FirebaseFirestore.instance
+      final snapshot = await FirestoreTenant.instance.firestore
           .collection('accountReceivable')
           .where('accountNumber', isEqualTo: accountNumber)
           .limit(1)
@@ -426,7 +427,7 @@ class _FormScreenState extends State<FormScreen> {
           final customerName = customer['name'];
           final docId = _customerIdMap[customerName];
           if (docId != null) {
-            final doc = await FirebaseFirestore.instance
+            final doc = await FirestoreTenant.instance.firestore
                 .collection('customers')
                 .doc(docId)
                 .get();
@@ -489,7 +490,7 @@ class _FormScreenState extends State<FormScreen> {
       final itemId = item['id'];
       final purchasedQty = item['quantity'] ?? 0;
 
-      final itemRef = FirebaseFirestore.instance
+      final itemRef = FirestoreTenant.instance.firestore
           .collection('itemsAvailable')
           .doc(itemId);
       final itemSnapshot = await itemRef.get();

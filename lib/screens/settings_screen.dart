@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/audit_service.dart';
+import '../services/firestore_tenant.dart';
 import '../styles/app_styles.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -11,7 +12,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _firestore = FirebaseFirestore.instance;
+  final _firestore = FirestoreTenant.instance.firestore;
   final _auditService = AuditService();
   bool _isLoading = true;
 
@@ -21,6 +22,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _emailNotifications = true;
   int _lowStockThreshold = 10;
   int _auditLogRetentionDays = 180;
+  bool _scheduledMaintenanceEnabled = true;
+  int _scheduledCleanupHour = 0;
+  int _scheduledCleanupMinute = 0;
+  int _maintenanceRetentionDays = 30;
   String _companyName = '';
   String _companyEmail = '';
   String _companyPhone = '';
@@ -30,6 +35,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _companyPhoneController = TextEditingController();
   final _lowStockController = TextEditingController();
   final _auditLogRetentionController = TextEditingController();
+  final _scheduledCleanupHourController = TextEditingController();
+  final _scheduledCleanupMinuteController = TextEditingController();
+  final _maintenanceRetentionController = TextEditingController();
 
   @override
   void initState() {
@@ -44,6 +52,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _companyPhoneController.dispose();
     _lowStockController.dispose();
     _auditLogRetentionController.dispose();
+    _scheduledCleanupHourController.dispose();
+    _scheduledCleanupMinuteController.dispose();
+    _maintenanceRetentionController.dispose();
     super.dispose();
   }
 
@@ -51,6 +62,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final parsed = int.tryParse(value) ?? 180;
     if (parsed < 30) return 30;
     if (parsed > 3650) return 3650;
+    return parsed;
+  }
+
+  int _parseMaintenanceRetentionDays(String value) {
+    final parsed = int.tryParse(value) ?? 30;
+    if (parsed < 1) return 1;
+    if (parsed > 3650) return 3650;
+    return parsed;
+  }
+
+  int _parseHour(String value) {
+    final parsed = int.tryParse(value) ?? 0;
+    if (parsed < 0) return 0;
+    if (parsed > 23) return 23;
+    return parsed;
+  }
+
+  int _parseMinute(String value) {
+    final parsed = int.tryParse(value) ?? 0;
+    if (parsed < 0) return 0;
+    if (parsed > 59) return 59;
     return parsed;
   }
 
@@ -69,6 +101,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _emailNotifications = data['emailNotifications'] ?? true;
           _lowStockThreshold = data['lowStockThreshold'] ?? 10;
           _auditLogRetentionDays = data['auditLogRetentionDays'] ?? 180;
+          _scheduledMaintenanceEnabled =
+              data['scheduledMaintenanceEnabled'] ?? true;
+          _scheduledCleanupHour = data['scheduledCleanupHour'] ?? 0;
+          _scheduledCleanupMinute = data['scheduledCleanupMinute'] ?? 0;
+          _maintenanceRetentionDays = data['maintenanceRetentionDays'] ?? 30;
           _companyName = data['companyName'] ?? '';
           _companyEmail = data['companyEmail'] ?? '';
           _companyPhone = data['companyPhone'] ?? '';
@@ -78,11 +115,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _companyPhoneController.text = _companyPhone;
           _lowStockController.text = _lowStockThreshold.toString();
           _auditLogRetentionController.text = _auditLogRetentionDays.toString();
+          _scheduledCleanupHourController.text = _scheduledCleanupHour
+              .toString();
+          _scheduledCleanupMinuteController.text = _scheduledCleanupMinute
+              .toString();
+          _maintenanceRetentionController.text = _maintenanceRetentionDays
+              .toString();
           _isLoading = false;
         });
       } else {
         setState(() {
           _auditLogRetentionController.text = _auditLogRetentionDays.toString();
+          _scheduledCleanupHourController.text = _scheduledCleanupHour
+              .toString();
+          _scheduledCleanupMinuteController.text = _scheduledCleanupMinute
+              .toString();
+          _maintenanceRetentionController.text = _maintenanceRetentionDays
+              .toString();
           _isLoading = false;
         });
       }
@@ -106,6 +155,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final auditLogRetentionDays = _parseRetentionDays(
       _auditLogRetentionController.text,
     );
+    final scheduledCleanupHour = _parseHour(
+      _scheduledCleanupHourController.text,
+    );
+    final scheduledCleanupMinute = _parseMinute(
+      _scheduledCleanupMinuteController.text,
+    );
+    final maintenanceRetentionDays = _parseMaintenanceRetentionDays(
+      _maintenanceRetentionController.text,
+    );
 
     try {
       await _firestore.collection('settings').doc('appSettings').set({
@@ -114,6 +172,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'emailNotifications': _emailNotifications,
         'lowStockThreshold': lowStockThreshold,
         'auditLogRetentionDays': auditLogRetentionDays,
+        'scheduledMaintenanceEnabled': _scheduledMaintenanceEnabled,
+        'scheduledCleanupHour': scheduledCleanupHour,
+        'scheduledCleanupMinute': scheduledCleanupMinute,
+        'maintenanceRetentionDays': maintenanceRetentionDays,
         'companyName': _companyNameController.text,
         'companyEmail': _companyEmailController.text,
         'companyPhone': _companyPhoneController.text,
@@ -121,6 +183,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       });
 
       _auditLogRetentionController.text = auditLogRetentionDays.toString();
+      _scheduledCleanupHourController.text = scheduledCleanupHour.toString();
+      _scheduledCleanupMinuteController.text = scheduledCleanupMinute
+          .toString();
+      _maintenanceRetentionController.text = maintenanceRetentionDays
+          .toString();
 
       await _auditService.logAction(
         action: 'update',
@@ -132,6 +199,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'emailNotifications': _emailNotifications,
           'lowStockThreshold': lowStockThreshold,
           'auditLogRetentionDays': auditLogRetentionDays,
+          'scheduledMaintenanceEnabled': _scheduledMaintenanceEnabled,
+          'scheduledCleanupHour': scheduledCleanupHour,
+          'scheduledCleanupMinute': scheduledCleanupMinute,
+          'maintenanceRetentionDays': maintenanceRetentionDays,
         },
       );
 
@@ -332,17 +403,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(AppStyles.spacingM),
-                      child: TextField(
-                        controller: _auditLogRetentionController,
-                        decoration: const InputDecoration(
-                          labelText: 'Audit Log Retention',
-                          helperText:
-                              'Days to keep audit logs (minimum 30, maximum 3650)',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.history_toggle_off_outlined),
-                          suffixText: 'days',
-                        ),
-                        keyboardType: TextInputType.number,
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              'Enable Scheduled Maintenance Cleanup',
+                            ),
+                            subtitle: const Text(
+                              'Automatically prune old maintenance/import records every day',
+                            ),
+                            value: _scheduledMaintenanceEnabled,
+                            onChanged: (value) {
+                              setState(() {
+                                _scheduledMaintenanceEnabled = value;
+                              });
+                            },
+                            secondary: const Icon(Icons.schedule_outlined),
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _scheduledCleanupHourController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Cleanup Hour',
+                                    helperText: '0 to 23',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(
+                                      Icons.access_time_outlined,
+                                    ),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                              const SizedBox(width: AppStyles.spacingM),
+                              Expanded(
+                                child: TextField(
+                                  controller: _scheduledCleanupMinuteController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Cleanup Minute',
+                                    helperText: '0 to 59',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.timelapse_outlined),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          TextField(
+                            controller: _maintenanceRetentionController,
+                            decoration: const InputDecoration(
+                              labelText: 'Maintenance Retention',
+                              helperText:
+                                  'Days to keep cleanup/import logs (minimum 1, maximum 3650)',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.auto_delete_outlined),
+                              suffixText: 'days',
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          TextField(
+                            controller: _auditLogRetentionController,
+                            decoration: const InputDecoration(
+                              labelText: 'Audit Log Retention',
+                              helperText:
+                                  'Days to keep audit logs (minimum 30, maximum 3650)',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(
+                                Icons.history_toggle_off_outlined,
+                              ),
+                              suffixText: 'days',
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
                       ),
                     ),
                   ),

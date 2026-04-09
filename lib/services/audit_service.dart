@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'firestore_tenant.dart';
 import '../utils/app_logger.dart';
 
 class AuditService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirestoreTenant _tenant = FirestoreTenant.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  FirebaseFirestore get _firestore => _tenant.firestore;
 
   Future<void> logAction({
     required String action,

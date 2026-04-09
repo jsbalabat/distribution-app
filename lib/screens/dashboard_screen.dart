@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../styles/app_styles.dart';
 import '../services/firestore_service.dart';
+import '../services/firestore_tenant.dart';
 import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
 import 'edit_requisition_screen.dart';
@@ -202,7 +203,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
+        stream: FirestoreTenant.instance.firestore
             .collection('salesRequisitions')
             .where('userID', isEqualTo: uid)
             .orderBy('timeStamp', descending: true)
