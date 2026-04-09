@@ -12,6 +12,7 @@ import 'view_reports_screen.dart';
 import 'settings_screen.dart';
 import 'audit_logs_screen.dart';
 import 'notifications_screen.dart';
+import 'company_tenants_screen.dart';
 import '../utils/excel_file_picker.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -310,6 +311,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           context,
                           MaterialPageRoute(
                             builder: (context) => const ManageUsersScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: AppStyles.spacingS),
+
+                    _buildActionCard(
+                      label: 'Company Tenants',
+                      subtitle: 'Create, edit, and disable company identifiers',
+                      icon: Icons.apartment_outlined,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CompanyTenantsScreen(),
                           ),
                         );
                       },

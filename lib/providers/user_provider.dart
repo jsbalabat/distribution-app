@@ -53,6 +53,11 @@ class UserProvider with ChangeNotifier {
     String? databaseId,
   }) async {
     try {
+      AppLogger.info(
+        'Provider signIn started (company=${(companyIdentifier ?? '').trim().toLowerCase()})',
+        tag: 'PROVIDER',
+      );
+
       _isLoading = true;
       notifyListeners();
 
@@ -64,6 +69,10 @@ class UserProvider with ChangeNotifier {
       );
       _isLoading = false;
       notifyListeners();
+      AppLogger.info(
+        'Provider signIn succeeded (isLoggedIn=${_currentUser != null})',
+        tag: 'PROVIDER',
+      );
       return _currentUser != null;
     } catch (e, st) {
       AppLogger.error(

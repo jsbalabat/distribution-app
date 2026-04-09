@@ -1,6 +1,7 @@
 /* eslint-disable object-curly-spacing */
 /* eslint-disable max-len */
 const admin = require("firebase-admin");
+const {getFirestore} = require("firebase-admin/firestore");
 const xlsx = require("xlsx");
 const {Storage} = require("@google-cloud/storage");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
@@ -11,8 +12,126 @@ const path = require("path");
 const nodemailer = require("nodemailer");
 
 admin.initializeApp();
-const db = admin.firestore();
+const db = getFirestore();
 const storage = new Storage();
+
+const DEFAULT_DATABASE_ID = "(default)";
+
+/**
+ * Returns a Firestore client for a target database id.
+ * @param {string} databaseId Firestore database id.
+ * @return {FirebaseFirestore.Firestore} Firestore client.
+ */
+function getTenantDb(databaseId) {
+  if (!databaseId || databaseId === DEFAULT_DATABASE_ID) {
+    return db;
+  }
+  return getFirestore(databaseId);
+}
+
+/**
+ * Returns active company tenant mappings from default database.
+ * @return {Promise<Array<{companyId: string, databaseId: string}>>} Active tenant mappings.
+ */
+async function getActiveTenants() {
+  const snapshot = await db.collection("companyTenants").where("isActive", "!=", false).get();
+
+  if (snapshot.empty) {
+    return [{companyId: "default", databaseId: DEFAULT_DATABASE_ID}];
+  }
+
+  const seen = new Set();
+  const tenants = [];
+
+  snapshot.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    const mappedDatabaseId = (data.firestoreDatabaseId || data.databaseId || DEFAULT_DATABASE_ID)
+        .toString()
+        .trim();
+    const databaseId = mappedDatabaseId || DEFAULT_DATABASE_ID;
+
+    if (!seen.has(databaseId)) {
+      seen.add(databaseId);
+      tenants.push({companyId: doc.id, databaseId: databaseId});
+    }
+  });
+
+  return tenants;
+}
+
+/**
+ * Resolves tenant details from callable request data.
+ * Falls back to scanning active tenants for the authenticated user.
+ * @param {object} data Request payload.
+ * @param {string} uid Authenticated uid.
+ * @return {Promise<{companyId: string, databaseId: string}>} Resolved tenant mapping.
+ */
+async function resolveTenantForCallable(data, uid) {
+  const actorCompanyIdentifier = ((data && (data.actorCompanyIdentifier || data.actorCompanyId)) || "")
+      .toString()
+      .trim()
+      .toLowerCase();
+  const actorDatabaseId = ((data && data.actorDatabaseId) || "").toString().trim();
+
+  const companyIdentifier = ((data && (data.companyIdentifier || data.companyId)) || "")
+      .toString()
+      .trim()
+      .toLowerCase();
+  const providedDatabaseId = ((data && data.databaseId) || "").toString().trim();
+
+  const preferredIdentifier = actorCompanyIdentifier || companyIdentifier;
+  if (preferredIdentifier) {
+    const tenantDoc = await db.collection("companyTenants").doc(preferredIdentifier).get();
+    if (!tenantDoc.exists) {
+      throw new HttpsError("invalid-argument", `Unknown company identifier: ${preferredIdentifier}`);
+    }
+
+    const tenantData = tenantDoc.data() || {};
+    if (tenantData.isActive === false) {
+      throw new HttpsError("permission-denied", "Selected company is inactive.");
+    }
+
+    const databaseId = (tenantData.firestoreDatabaseId || tenantData.databaseId || DEFAULT_DATABASE_ID)
+        .toString()
+        .trim() || DEFAULT_DATABASE_ID;
+    return {companyId: preferredIdentifier, databaseId: databaseId};
+  }
+
+  if (actorDatabaseId) {
+    return {companyId: "actor_direct", databaseId: actorDatabaseId};
+  }
+
+  if (providedDatabaseId) {
+    return {companyId: "direct", databaseId: providedDatabaseId};
+  }
+
+  const tenants = await getActiveTenants();
+  for (const tenant of tenants) {
+    const tenantDb = getTenantDb(tenant.databaseId);
+    const userDoc = await tenantDb.collection("users").doc(uid).get();
+    if (userDoc.exists) {
+      return tenant;
+    }
+  }
+
+  return {companyId: "default", databaseId: DEFAULT_DATABASE_ID};
+}
+
+/**
+ * Validates company tenant identifier format.
+ * @param {string} identifier Tenant identifier.
+ * @return {string} Normalized identifier.
+ */
+function normalizeCompanyIdentifier(identifier) {
+  const normalized = (identifier || "").toString().trim().toLowerCase();
+  if (!/^[a-z0-9-]{2,50}$/.test(normalized)) {
+    throw new HttpsError(
+        "invalid-argument",
+        "Company identifier must be 2-50 chars using lowercase letters, numbers, or hyphens.",
+    );
+  }
+  return normalized;
+}
 
 /**
  * Deletes query results in batches of up to 500 documents.
@@ -30,7 +149,7 @@ async function deleteInBatches(query) {
       break;
     }
 
-    const batch = db.batch();
+    const batch = query.firestore.batch();
     snapshot.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
 
@@ -43,15 +162,16 @@ async function deleteInBatches(query) {
 
 /**
  * Resolves audit log retention days from Firestore settings with env fallback.
+ * @param {FirebaseFirestore.Firestore} firestoreDb Firestore client.
  * @return {Promise<number>} Retention period in days.
  */
-async function getAuditLogRetentionDays() {
+async function getAuditLogRetentionDays(firestoreDb = db) {
   const defaultRetentionDays = 180;
   const envValue = Number(process.env.AUDIT_LOG_RETENTION_DAYS || defaultRetentionDays);
   const envRetentionDays = Number.isFinite(envValue) ? envValue : defaultRetentionDays;
 
   try {
-    const settingsDoc = await db.collection("settings").doc("appSettings").get();
+    const settingsDoc = await firestoreDb.collection("settings").doc("appSettings").get();
     if (!settingsDoc.exists) {
       return envRetentionDays;
     }
@@ -69,16 +189,98 @@ async function getAuditLogRetentionDays() {
 }
 
 /**
+ * Reads scheduled maintenance settings from Firestore with sane defaults.
+ * @param {FirebaseFirestore.Firestore} firestoreDb Firestore client.
+ * @return {Promise<{enabled: boolean, hour: number, minute: number, retentionDays: number, timeZone: string}>}
+ */
+async function getMaintenanceScheduleSettings(firestoreDb = db) {
+  const defaults = {
+    enabled: true,
+    hour: 0,
+    minute: 0,
+    retentionDays: 30,
+    timeZone: process.env.MAINTENANCE_TIMEZONE || "Asia/Manila",
+  };
+
+  try {
+    const settingsDoc = await firestoreDb.collection("settings").doc("appSettings").get();
+    if (!settingsDoc.exists) {
+      return defaults;
+    }
+
+    const data = settingsDoc.data() || {};
+
+    const hourValue = Number(data.scheduledCleanupHour);
+    const minuteValue = Number(data.scheduledCleanupMinute);
+    const retentionValue = Number(data.maintenanceRetentionDays);
+
+    const hour = Number.isFinite(hourValue) ? Math.min(23, Math.max(0, Math.floor(hourValue))) : defaults.hour;
+    const minute = Number.isFinite(minuteValue) ? Math.min(59, Math.max(0, Math.floor(minuteValue))) : defaults.minute;
+    const retentionDays = Number.isFinite(retentionValue) ? Math.min(3650, Math.max(1, Math.floor(retentionValue))) : defaults.retentionDays;
+
+    const timeZone =
+      typeof data.maintenanceTimeZone === "string" && data.maintenanceTimeZone.trim().length > 0 ?
+      data.maintenanceTimeZone.trim() : defaults.timeZone;
+
+    return {
+      enabled: data.scheduledMaintenanceEnabled !== false,
+      hour,
+      minute,
+      retentionDays,
+      timeZone,
+    };
+  } catch (error) {
+    console.error("Failed to load maintenance schedule settings, using defaults", error);
+    return defaults;
+  }
+}
+
+/**
+ * Resolves date parts for a given timezone.
+ * @param {Date} date Date instance in system timezone.
+ * @param {string} timeZone IANA timezone string.
+ * @return {{year: number, month: number, day: number, hour: number, minute: number}}
+ */
+function getDatePartsInTimeZone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const values = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = Number(part.value);
+    }
+  }
+
+  return {
+    year: typeof values.year === "number" ? values.year : date.getUTCFullYear(),
+    month: typeof values.month === "number" ? values.month : (date.getUTCMonth() + 1),
+    day: typeof values.day === "number" ? values.day : date.getUTCDate(),
+    hour: typeof values.hour === "number" ? values.hour : date.getUTCHours(),
+    minute: typeof values.minute === "number" ? values.minute : date.getUTCMinutes(),
+  };
+}
+
+/**
  * Verifies that the calling user is an admin user.
  * @param {string} uid Firebase Auth UID.
+ * @param {FirebaseFirestore.Firestore} firestoreDb Firestore client.
  * @return {Promise<boolean>} Whether the user is an admin.
  */
-async function isAdminUser(uid) {
+async function isAdminUser(uid, firestoreDb = db) {
   if (!uid) {
     return false;
   }
 
-  const userDoc = await db.collection("users").doc(uid).get();
+  const userDoc = await firestoreDb.collection("users").doc(uid).get();
   return userDoc.exists && userDoc.data().role === "admin";
 }
 
@@ -159,10 +361,11 @@ function parseWorkbookData(workbook) {
 /**
  * Writes parsed import rows into Firestore in batched chunks.
  * @param {{data: object[], data2: object[], data3: object[], data4: object[]}} parsed Parsed workbook rows.
+ * @param {FirebaseFirestore.Firestore} firestoreDb Firestore client.
  * @return {Promise<object>} Insert summary by collection.
  */
-async function importParsedWorkbookData(parsed) {
-  let batch = db.batch();
+async function importParsedWorkbookData(parsed, firestoreDb = db) {
+  let batch = firestoreDb.batch();
   let operations = 0;
 
   const summary = {
@@ -181,7 +384,7 @@ async function importParsedWorkbookData(parsed) {
     if (operations === 0) return;
     if (!force && operations < 450) return;
     await batch.commit();
-    batch = db.batch();
+    batch = firestoreDb.batch();
     operations = 0;
   }
 
@@ -192,7 +395,7 @@ async function importParsedWorkbookData(parsed) {
    * @return {Promise<void>}
    */
   async function addDoc(collectionName, payload) {
-    const ref = db.collection(collectionName).doc();
+    const ref = firestoreDb.collection(collectionName).doc();
     batch.set(ref, {
       ...payload,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -293,102 +496,140 @@ async function importParsedWorkbookData(parsed) {
 }
 
 // ========================================
-// SCHEDULED CLEANUP FUNCTION - Runs Daily at Midnight
+// SCHEDULED CLEANUP FUNCTION
+// Runs every 5 minutes and executes only at configured daily time
 // Prunes old operational records while preserving live data
 // ========================================
 
 exports.deleteAllDataExceptUsersAndLogs = onSchedule(
     {
-      schedule: "0 0 * * *", // Runs at 00:00 (midnight) every day
-      timeZone: "Asia/Manila", // Change to your timezone
+      schedule: "*/5 * * * *", // Poll every 5 minutes; run only at configured time
       memory: "512MiB",
     },
     async (event) => {
-      console.log("Starting scheduled maintenance cleanup at midnight...");
+      const nowDate = new Date();
+      const tenants = await getActiveTenants();
+      const tenantResults = [];
 
-      try {
-        const now = admin.firestore.Timestamp.now();
-        let totalDeleted = 0;
-        const deletionDetails = {};
+      for (const tenant of tenants) {
+        const tenantDb = getTenantDb(tenant.databaseId);
+        const scheduleSettings = await getMaintenanceScheduleSettings(tenantDb);
+        const now = getDatePartsInTimeZone(nowDate, scheduleSettings.timeZone);
 
-        const retentionDays = Number(process.env.MAINTENANCE_RETENTION_DAYS || 30);
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-        const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
-
-        // Collections to prune when they age out.
-        const collectionsToPrune = [
-          {name: "dataImports", field: "requestedAt"},
-          {name: "cleanupLogs", field: "executedAt"},
-        ];
-
-        // Collections to PRESERVE (never delete)
-        const preservedCollections = [
-          "customers",
-          "accountReceivable",
-          "itemMaster",
-          "itemsAvailable",
-          "salesRequisitions",
-          "users",
-          "emailLogs",
-          "auditLogs",
-          "notifications",
-        ];
-
-        console.log(`Retention days: ${retentionDays}`);
-        console.log(`Collections to prune: ${collectionsToPrune.map((item) => item.name).join(", ")}`);
-        console.log(`Protected collections: ${preservedCollections.join(", ")}`);
-
-        for (const collectionConfig of collectionsToPrune) {
-          console.log(`Processing collection: ${collectionConfig.name}`);
-          const query = db
-              .collection(collectionConfig.name)
-              .where(collectionConfig.field, "<", cutoffTimestamp)
-              .limit(500);
-
-          const collectionDeleted = await deleteInBatches(query);
-          deletionDetails[collectionConfig.name] = collectionDeleted;
-          totalDeleted += collectionDeleted;
-
-          console.log(`  Deleted ${collectionDeleted} documents from ${collectionConfig.name}`);
+        if (!scheduleSettings.enabled) {
+          tenantResults.push({
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            skipped: true,
+            reason: "disabled",
+          });
+          continue;
         }
 
-        // Log cleanup operation with detailed breakdown
-        await db.collection("cleanupLogs").add({
-          executedAt: now,
-          type: "scheduled_maintenance",
-          totalDocumentsDeleted: totalDeleted,
-          deletionDetails: deletionDetails,
-          preservedCollections: preservedCollections,
-          deletedCollections: collectionsToPrune.map((item) => item.name),
-          retentionDays: retentionDays,
-          status: "success",
-          message: `Maintenance cleanup: ${totalDeleted} old documents deleted from ${collectionsToPrune.length} collections`,
-        });
+        const withinMinuteWindow =
+          now.hour === scheduleSettings.hour &&
+          now.minute >= scheduleSettings.minute &&
+          now.minute < (scheduleSettings.minute + 5);
 
-        console.log(`Maintenance cleanup finished: ${totalDeleted} total documents deleted`);
-        console.log("Deletion breakdown:", deletionDetails);
+        if (!withinMinuteWindow) {
+          tenantResults.push({
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            skipped: true,
+            reason: "outside_scheduled_window",
+          });
+          continue;
+        }
 
-        return {
-          success: true,
-          totalDeleted: totalDeleted,
-          details: deletionDetails,
-          preserved: preservedCollections,
-          retentionDays: retentionDays,
-        };
-      } catch (error) {
-        console.error("Maintenance cleanup failed:", error);
+        try {
+          const runTimestamp = admin.firestore.Timestamp.now();
+          let totalDeleted = 0;
+          const deletionDetails = {};
 
-        await db.collection("cleanupLogs").add({
-          executedAt: admin.firestore.Timestamp.now(),
-          type: "scheduled_maintenance",
-          status: "failed",
-          error: error.message,
-          errorStack: error.stack,
-        });
+          const retentionDays = scheduleSettings.retentionDays;
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+          const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
 
-        throw error;
+          const collectionsToPrune = [
+            {name: "dataImports", field: "requestedAt"},
+            {name: "cleanupLogs", field: "executedAt"},
+          ];
+
+          const preservedCollections = [
+            "customers",
+            "accountReceivable",
+            "itemMaster",
+            "itemsAvailable",
+            "salesRequisitions",
+            "users",
+            "emailLogs",
+            "auditLogs",
+            "notifications",
+          ];
+
+          for (const collectionConfig of collectionsToPrune) {
+            const query = tenantDb
+                .collection(collectionConfig.name)
+                .where(collectionConfig.field, "<", cutoffTimestamp)
+                .limit(500);
+
+            const collectionDeleted = await deleteInBatches(query);
+            deletionDetails[collectionConfig.name] = collectionDeleted;
+            totalDeleted += collectionDeleted;
+          }
+
+          await tenantDb.collection("cleanupLogs").add({
+            executedAt: runTimestamp,
+            type: "scheduled_maintenance",
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            totalDocumentsDeleted: totalDeleted,
+            deletionDetails: deletionDetails,
+            preservedCollections: preservedCollections,
+            deletedCollections: collectionsToPrune.map((item) => item.name),
+            retentionDays: retentionDays,
+            scheduledHour: scheduleSettings.hour,
+            scheduledMinute: scheduleSettings.minute,
+            scheduleTimeZone: scheduleSettings.timeZone,
+            status: "success",
+            message: `Maintenance cleanup: ${totalDeleted} old documents deleted from ${collectionsToPrune.length} collections`,
+          });
+
+          tenantResults.push({
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            success: true,
+            totalDeleted: totalDeleted,
+            details: deletionDetails,
+          });
+        } catch (error) {
+          await tenantDb.collection("cleanupLogs").add({
+            executedAt: admin.firestore.Timestamp.now(),
+            type: "scheduled_maintenance",
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            scheduledHour: scheduleSettings.hour,
+            scheduledMinute: scheduleSettings.minute,
+            scheduleTimeZone: scheduleSettings.timeZone,
+            status: "failed",
+            error: error.message,
+            errorStack: error.stack,
+          });
+
+          tenantResults.push({
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            success: false,
+            error: error.message,
+          });
+        }
       }
+
+      return {
+        success: true,
+        tenantResults: tenantResults,
+      };
     },
 );
 
@@ -404,54 +645,67 @@ exports.pruneAuditLogs = onSchedule(
       memory: "256MiB",
     },
     async (event) => {
-      const retentionDays = await getAuditLogRetentionDays();
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-      const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
+      const tenants = await getActiveTenants();
+      const tenantResults = [];
 
-      console.log(
-          `Starting audit log pruning. Retention: ${retentionDays} days, cutoff: ${cutoffDate.toISOString()}`,
-      );
+      for (const tenant of tenants) {
+        const tenantDb = getTenantDb(tenant.databaseId);
+        const retentionDays = await getAuditLogRetentionDays(tenantDb);
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+        const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
 
-      try {
-        const pruneQuery = db
-            .collection("auditLogs")
-            .where("timestamp", "<", cutoffTimestamp)
-            .limit(500);
+        try {
+          const pruneQuery = tenantDb
+              .collection("auditLogs")
+              .where("timestamp", "<", cutoffTimestamp)
+              .limit(500);
 
-        const deletedCount = await deleteInBatches(pruneQuery);
+          const deletedCount = await deleteInBatches(pruneQuery);
 
-        await db.collection("cleanupLogs").add({
-          executedAt: admin.firestore.Timestamp.now(),
-          type: "audit_log_prune",
-          status: "success",
-          retentionDays: retentionDays,
-          cutoffTimestamp: cutoffTimestamp,
-          deletedCount: deletedCount,
-          message: `Pruned ${deletedCount} audit logs older than ${retentionDays} days`,
-        });
+          await tenantDb.collection("cleanupLogs").add({
+            executedAt: admin.firestore.Timestamp.now(),
+            type: "audit_log_prune",
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            status: "success",
+            retentionDays: retentionDays,
+            cutoffTimestamp: cutoffTimestamp,
+            deletedCount: deletedCount,
+            message: `Pruned ${deletedCount} audit logs older than ${retentionDays} days`,
+          });
 
-        console.log(`Audit log pruning completed. Deleted: ${deletedCount}`);
+          tenantResults.push({
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            success: true,
+            deletedCount: deletedCount,
+          });
+        } catch (error) {
+          await tenantDb.collection("cleanupLogs").add({
+            executedAt: admin.firestore.Timestamp.now(),
+            type: "audit_log_prune",
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            status: "failed",
+            retentionDays: retentionDays,
+            error: error.message,
+            errorStack: error.stack,
+          });
 
-        return {
-          success: true,
-          deletedCount: deletedCount,
-          retentionDays: retentionDays,
-        };
-      } catch (error) {
-        console.error("Audit log pruning failed:", error);
-
-        await db.collection("cleanupLogs").add({
-          executedAt: admin.firestore.Timestamp.now(),
-          type: "audit_log_prune",
-          status: "failed",
-          retentionDays: retentionDays,
-          error: error.message,
-          errorStack: error.stack,
-        });
-
-        throw error;
+          tenantResults.push({
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            success: false,
+            error: error.message,
+          });
+        }
       }
+
+      return {
+        success: true,
+        tenantResults: tenantResults,
+      };
     },
 );
 
@@ -471,7 +725,9 @@ exports.runDestructiveCleanup = onCall(
       }
 
       const callerUid = request.auth.uid;
-      const isAdmin = await isAdminUser(callerUid);
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+      const isAdmin = await isAdminUser(callerUid, tenantDb);
       if (!isAdmin) {
         throw new HttpsError("permission-denied", "Admin access is required.");
       }
@@ -501,15 +757,17 @@ exports.runDestructiveCleanup = onCall(
 
         for (const collectionName of collectionsToDelete) {
           const deletedCount = await deleteInBatches(
-              db.collection(collectionName).limit(500),
+              tenantDb.collection(collectionName).limit(500),
           );
           deletionDetails[collectionName] = deletedCount;
           totalDeleted += deletedCount;
         }
 
-        await db.collection("cleanupLogs").add({
+        await tenantDb.collection("cleanupLogs").add({
           executedAt: admin.firestore.Timestamp.now(),
           type: "destructive_cleanup",
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
           status: "success",
           triggeredBy: callerUid,
           reason: reason,
@@ -526,9 +784,11 @@ exports.runDestructiveCleanup = onCall(
           details: deletionDetails,
         };
       } catch (error) {
-        await db.collection("cleanupLogs").add({
+        await tenantDb.collection("cleanupLogs").add({
           executedAt: admin.firestore.Timestamp.now(),
           type: "destructive_cleanup",
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
           status: "failed",
           triggeredBy: callerUid,
           reason: reason,
@@ -559,8 +819,13 @@ exports.importDataFromExcelDirect = onCall(
       }
 
       const callerUid = request.auth.uid;
-      console.log(`[IMPORT][DIRECT] Request received from uid=${callerUid}`);
-      const isAdmin = await isAdminUser(callerUid);
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+      console.log(
+          `[IMPORT][DIRECT] Request received from uid=${callerUid}, ` +
+          `company=${tenant.companyId}, database=${tenant.databaseId}`,
+      );
+      const isAdmin = await isAdminUser(callerUid, tenantDb);
       if (!isAdmin) {
         console.warn(`[IMPORT][DIRECT] Permission denied for uid=${callerUid}`);
         throw new HttpsError("permission-denied", "Admin access is required.");
@@ -596,12 +861,14 @@ exports.importDataFromExcelDirect = onCall(
       `item master=${parsed.data3.length}, items available=${parsed.data4.length}`,
     );
 
-        const summary = await importParsedWorkbookData(parsed);
+        const summary = await importParsedWorkbookData(parsed, tenantDb);
     console.log(`[IMPORT][DIRECT] Firestore write summary: ${JSON.stringify(summary)}`);
 
-        await db.collection("dataImports").add({
+        await tenantDb.collection("dataImports").add({
           status: "completed",
           source: "directUpload",
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
           fileName: fileName,
           requestedByUid: callerUid,
           requestedByEmail: request.auth.token.email || "unknown",
@@ -643,6 +910,10 @@ exports.sendSalesRequisitionEmail = onCall(
             "User must be authenticated to send emails",
         );
       }
+
+      const callerUid = request.auth.uid;
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
 
       const {to, subject, pdfData, fileName, customerName, sorNumber} = request.data;
 
@@ -752,12 +1023,14 @@ exports.sendSalesRequisitionEmail = onCall(
         expirationDate.setDate(expirationDate.getDate() + 30);
         const expiresAt = admin.firestore.Timestamp.fromDate(expirationDate);
 
-        await db.collection("emailLogs").add({
+        await tenantDb.collection("emailLogs").add({
           to: to,
           subject: mailOptions.subject,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
           sorNumber: sorNumber,
           customerName: customerName,
-          sentBy: request.auth.uid,
+          sentBy: callerUid,
           sentByEmail: request.auth.token.email || "unknown",
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
           status: "success",
@@ -779,8 +1052,10 @@ exports.sendSalesRequisitionEmail = onCall(
         expirationDate.setDate(expirationDate.getDate() + 30);
         const expiresAt = admin.firestore.Timestamp.fromDate(expirationDate);
 
-        await db.collection("emailLogs").add({
+        await tenantDb.collection("emailLogs").add({
           to: to,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
           sorNumber: sorNumber,
           customerName: customerName,
           sentBy: request.auth && request.auth.uid ? request.auth.uid : null,
@@ -797,6 +1072,75 @@ exports.sendSalesRequisitionEmail = onCall(
             `Failed to send email: ${error.message}`,
         );
       }
+    },
+);
+
+// ========================================
+// COMPANY TENANT MANAGEMENT (default DB directory)
+// ========================================
+
+exports.upsertCompanyTenant = onCall(
+    {
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in.");
+      }
+
+      const callerUid = request.auth.uid;
+      const callerTenant = await resolveTenantForCallable(request.data, callerUid);
+      const callerDb = getTenantDb(callerTenant.databaseId);
+
+      const adminAllowed = await isAdminUser(callerUid, callerDb);
+      if (!adminAllowed) {
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const tenantIdentifier = normalizeCompanyIdentifier(
+          (request.data && (request.data.companyIdentifier || request.data.companyId)) || "",
+      );
+      const companyName = ((request.data && request.data.companyName) || "")
+          .toString()
+          .trim();
+      const firestoreDatabaseId = ((request.data && request.data.firestoreDatabaseId) || "")
+          .toString()
+          .trim();
+      const isActive = request.data && request.data.isActive !== false;
+
+      if (!companyName) {
+        throw new HttpsError("invalid-argument", "companyName is required.");
+      }
+
+      if (!firestoreDatabaseId) {
+        throw new HttpsError("invalid-argument", "firestoreDatabaseId is required.");
+      }
+
+      const tenantRef = db.collection("companyTenants").doc(tenantIdentifier);
+      const existing = await tenantRef.get();
+
+      await tenantRef.set({
+        companyId: tenantIdentifier,
+        companyName: companyName,
+        firestoreDatabaseId: firestoreDatabaseId,
+        databaseId: firestoreDatabaseId,
+        isActive: isActive,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: callerUid,
+        ...(existing.exists ? {} : {
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdBy: callerUid,
+        }),
+      }, {merge: true});
+
+      return {
+        success: true,
+        companyId: tenantIdentifier,
+        firestoreDatabaseId: firestoreDatabaseId,
+        isActive: isActive,
+        operation: existing.exists ? "updated" : "created",
+      };
     },
 );
 

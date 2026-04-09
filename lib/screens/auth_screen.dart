@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../styles/app_styles.dart';
+import '../utils/app_logger.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -39,6 +40,11 @@ class _AuthScreenState extends State<AuthScreen> {
       _errorMessage = '';
     });
 
+    AppLogger.info(
+      'UI login submit started for company=${_companyIdentifierController.text.trim().toLowerCase()}',
+      tag: 'AUTH_UI',
+    );
+
     try {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
 
@@ -53,9 +59,12 @@ class _AuthScreenState extends State<AuthScreen> {
 
       // Authentication is successful here
       // The Consumer in main.dart will handle navigation
+      AppLogger.info('UI login submit succeeded', tag: 'AUTH_UI');
     } catch (e) {
       // Check if widget is still mounted before setting state
       if (!mounted) return;
+
+      AppLogger.error('UI login submit failed', error: e, tag: 'AUTH_UI');
 
       setState(() {
         final raw = e.toString();

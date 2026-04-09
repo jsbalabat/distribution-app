@@ -43,6 +43,14 @@ service cloud.firestore {
       allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
+    // companyTenants collection
+    // - readable so clients can resolve company identifier before sign-in
+    // - writable by admins only
+    match /companyTenants/{companyId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // salesRequisitions collection
     // - Users can create their own requisitions
     // - Users can read/update/delete their OWN requisitions

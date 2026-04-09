@@ -12,12 +12,27 @@ class AuthService {
 
   FirebaseFirestore get _firestore => _tenant.firestore;
 
+  String _maskEmail(String email) {
+    final parts = email.split('@');
+    if (parts.length != 2) return email;
+    final local = parts.first;
+    final domain = parts.last;
+    if (local.length <= 2) {
+      return '$local@$domain';
+    }
+    return '${local.substring(0, 2)}***@$domain';
+  }
+
   Future<String> _resolveDatabaseId({
     String? companyIdentifier,
     String? databaseId,
   }) async {
     final explicitDatabaseId = databaseId?.trim();
     if (explicitDatabaseId != null && explicitDatabaseId.isNotEmpty) {
+      AppLogger.info(
+        'Using explicit databaseId for login: $explicitDatabaseId',
+        tag: 'AUTH',
+      );
       return explicitDatabaseId;
     }
 
@@ -26,10 +41,33 @@ class AuthService {
       throw Exception('Please enter your company identifier.');
     }
 
-    final directoryDoc = await FirebaseFirestore.instance
-        .collection('companyTenants')
-        .doc(identifier)
-        .get();
+    AppLogger.info('Resolving company identifier: $identifier', tag: 'AUTH');
+
+    DocumentSnapshot<Map<String, dynamic>> directoryDoc;
+    try {
+      directoryDoc = await FirebaseFirestore.instance
+          .collection('companyTenants')
+          .doc(identifier)
+          .get();
+    } on FirebaseException catch (e, st) {
+      AppLogger.error(
+        'Failed reading companyTenants/$identifier while resolving login tenant',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      if (e.code == 'permission-denied') {
+        throw Exception(
+          'Company lookup is blocked by Firestore rules. Deploy the latest rules and try again.',
+        );
+      }
+      throw Exception(
+        ErrorMapper.mapFirestoreError(
+          e.code,
+          action: 'Resolving company identifier',
+        ),
+      );
+    }
 
     if (!directoryDoc.exists) {
       throw Exception('Unknown company identifier: $identifier');
@@ -51,6 +89,11 @@ class AuthService {
       );
     }
 
+    AppLogger.info(
+      'Resolved company $identifier to Firestore database $resolvedDatabaseId',
+      tag: 'AUTH',
+    );
+
     return resolvedDatabaseId;
   }
 
@@ -71,6 +114,15 @@ class AuthService {
         await _auth.signOut();
         return null;
       }
+    } on FirebaseException catch (e, st) {
+      AppLogger.error(
+        'Failed to load current user profile due to Firestore permission issue '
+        '(database=${_tenant.databaseId})',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      return null;
     } catch (e, st) {
       AppLogger.error(
         'Failed to load current user profile',
@@ -89,16 +141,49 @@ class AuthService {
     String? companyIdentifier,
     String? databaseId,
   }) async {
+    final trimmedEmail = email.trim();
+    final trimmedCompanyIdentifier = companyIdentifier?.trim().toLowerCase();
+
+    if (trimmedEmail.isEmpty) {
+      throw Exception('Please enter your email.');
+    }
+    if (password.isEmpty) {
+      throw Exception('Please enter your password.');
+    }
+    if ((databaseId == null || databaseId.trim().isEmpty) &&
+        (trimmedCompanyIdentifier == null ||
+            trimmedCompanyIdentifier.isEmpty)) {
+      throw Exception('Please enter your company identifier.');
+    }
+
+    AppLogger.info(
+      'Login attempt started for ${_maskEmail(trimmedEmail)} with company identifier '
+      '${trimmedCompanyIdentifier ?? '(none)'}',
+      tag: 'AUTH',
+    );
+
+    String? activeDatabaseId;
+
     try {
       final resolvedDatabaseId = await _resolveDatabaseId(
-        companyIdentifier: companyIdentifier,
+        companyIdentifier: trimmedCompanyIdentifier,
         databaseId: databaseId,
       );
       await _tenant.saveDatabaseId(resolvedDatabaseId);
+      activeDatabaseId = resolvedDatabaseId;
+      AppLogger.info(
+        'Saved active tenant database: $resolvedDatabaseId',
+        tag: 'AUTH',
+      );
 
       final result = await _auth.signInWithEmailAndPassword(
-        email: email,
+        email: trimmedEmail,
         password: password,
+      );
+
+      AppLogger.info(
+        'FirebaseAuth sign-in succeeded for uid=${result.user?.uid ?? 'unknown'}',
+        tag: 'AUTH',
       );
 
       if (result.user != null) {
@@ -108,6 +193,10 @@ class AuthService {
             .get();
 
         if (!profileDoc.exists) {
+          AppLogger.warning(
+            'User profile missing in tenant database $resolvedDatabaseId for uid=${result.user!.uid}',
+            tag: 'AUTH',
+          );
           await _auth.signOut();
           throw Exception(
             'Your account is not assigned to this company. Contact your admin.',
@@ -115,7 +204,7 @@ class AuthService {
         }
 
         final profileData = profileDoc.data() ?? <String, dynamic>{};
-        final identifier = companyIdentifier?.trim().toLowerCase();
+        final identifier = trimmedCompanyIdentifier;
         final needsBackfill =
             (profileData['firestoreDatabaseId'] ?? '').toString().isEmpty ||
             (identifier != null &&
@@ -128,7 +217,17 @@ class AuthService {
               'companyId': identifier,
             'firestoreDatabaseId': resolvedDatabaseId,
           }, SetOptions(merge: true));
+
+          AppLogger.info(
+            'Backfilled tenant fields for uid=${result.user!.uid} in database $resolvedDatabaseId',
+            tag: 'AUTH',
+          );
         }
+
+        AppLogger.info(
+          'Login completed for uid=${result.user!.uid} in database $resolvedDatabaseId',
+          tag: 'AUTH',
+        );
 
         return UserModel.fromMap({
           ...profileData,
@@ -147,6 +246,24 @@ class AuthService {
         tag: 'AUTH',
       );
       throw Exception(ErrorMapper.mapAuthError(e.code));
+    } on FirebaseException catch (e, st) {
+      AppLogger.error(
+        'Firestore failure during sign-in flow',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      if (e.code == 'permission-denied') {
+        throw Exception(
+          'Login failed because Firestore rules denied access in database '
+          '${activeDatabaseId ?? _tenant.databaseId}. Deploy/update rules for this tenant DB.',
+        );
+      }
+      throw Exception(
+        ErrorMapper.mapFirestoreError(e.code, action: 'Loading user profile'),
+      );
+    } on Exception {
+      rethrow;
     } catch (e, st) {
       AppLogger.error(
         'Unexpected sign-in error',
@@ -154,7 +271,7 @@ class AuthService {
         stackTrace: st,
         tag: 'AUTH',
       );
-      throw Exception('Unable to sign in right now. Please try again.');
+      throw Exception('Unexpected login error. Please try again.');
     }
   }
 
@@ -180,6 +297,15 @@ class AuthService {
           await _auth.signOut();
           return null;
         }
+      } on FirebaseException catch (e, st) {
+        AppLogger.error(
+          'Failed to process auth state change user profile due to Firestore access '
+          '(database=${_tenant.databaseId})',
+          error: e,
+          stackTrace: st,
+          tag: 'AUTH',
+        );
+        return null;
       } catch (e, st) {
         AppLogger.error(
           'Failed to process auth state change user profile',

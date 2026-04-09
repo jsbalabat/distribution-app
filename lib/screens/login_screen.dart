@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../styles/app_styles.dart';
+import '../utils/app_logger.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -77,32 +77,28 @@ class _LoginScreenState extends State<LoginScreen> {
       return; // Stop if client-side validation fails
     }
 
+    AppLogger.info(
+      'Legacy login submit started for company=${_companyIdentifierController.text.trim().toLowerCase()}',
+      tag: 'AUTH_UI',
+    );
+
     try {
       await _authService.signInWithEmailAndPassword(
         _emailController.text.trim(),
         _passwordController.text.trim(),
         companyIdentifier: _companyIdentifierController.text.trim(),
       );
+      AppLogger.info('Legacy login submit succeeded', tag: 'AUTH_UI');
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
       }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          if (e.code == 'user-not-found' || e.code == 'invalid-email') {
-            _emailError = 'Invalid email or user not found.';
-          } else if (e.code == 'wrong-password' ||
-              e.code == 'invalid-credential') {
-            _passwordError = 'Incorrect password.';
-          } else {
-            _emailError = 'Login failed. Check your credentials.';
-          }
-        });
-      }
     } catch (e) {
+      AppLogger.error('Legacy login submit failed', error: e, tag: 'AUTH_UI');
+
+      final message = e.toString().replaceFirst('Exception: ', '');
       if (mounted) {
         setState(() {
-          _emailError = 'An unexpected error occurred. Please try again.';
+          _emailError = message;
         });
       }
     } finally {
