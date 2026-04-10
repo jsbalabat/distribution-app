@@ -1,18 +1,20 @@
 // lib/screens/admin_dashboard_screen.dart
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/user_provider.dart';
 import '../styles/app_styles.dart';
 import '../utils/app_logger.dart';
-import 'manage_users_screen.dart';
-import 'view_reports_screen.dart';
-import 'settings_screen.dart';
-import 'audit_logs_screen.dart';
-import 'notifications_screen.dart';
 import '../utils/excel_file_picker.dart';
+import '../widgets/admin_desktop_shell.dart';
+import 'audit_logs_screen.dart';
+import 'manage_users_screen.dart';
+import 'notifications_screen.dart';
+import 'settings_screen.dart';
+import 'view_reports_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -22,6 +24,84 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  bool _isImportingCustomers = false;
+
+  void _navigateDesktop(AdminShellSection section) {
+    Widget? destination;
+    switch (section) {
+      case AdminShellSection.dashboard:
+        return;
+      case AdminShellSection.users:
+        destination = const ManageUsersScreen();
+      case AdminShellSection.reports:
+        destination = const ViewReportsScreen();
+      case AdminShellSection.settings:
+        destination = const SettingsScreen();
+      case AdminShellSection.auditLogs:
+        destination = const AuditLogsScreen();
+      case AdminShellSection.notifications:
+        destination = const NotificationsScreen();
+    }
+
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+  }
+
+  Future<void> _handleUploadCustomers(BuildContext context) async {
+    if (_isImportingCustomers) return;
+
+    setState(() {
+      _isImportingCustomers = true;
+    });
+
+    try {
+      final pickedFile = await pickExcelFile();
+      if (pickedFile == null) return;
+
+      final bytes = pickedFile.bytes;
+      if (bytes.isEmpty) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selected file could not be read.'),
+            backgroundColor: AppStyles.errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'importDataFromExcelDirect',
+      );
+      await callable.call(<String, dynamic>{
+        'fileName': pickedFile.name,
+        'fileBase64': base64Encode(bytes),
+      });
+    } catch (error) {
+      AppLogger.error(
+        '[IMPORT][UI] Upload failed via callable importDataFromExcelDirect',
+        error: error,
+        tag: 'IMPORT',
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to trigger import: $error'),
+          backgroundColor: AppStyles.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isImportingCustomers = false;
+        });
+      }
+    }
+  }
+
   Future<void> _runDestructiveCleanup(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -53,9 +133,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       },
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !context.mounted) return;
 
-    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Running destructive cleanup...'),
@@ -147,6 +226,270 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
     final userName = userProvider.currentUser?.name ?? 'Admin';
+    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+
+    final mobileBody = ListView(
+      padding: const EdgeInsets.all(AppStyles.spacingM),
+      children: [
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppStyles.adminPrimaryColor, AppStyles.primaryColor],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
+          ),
+          padding: const EdgeInsets.all(AppStyles.spacingL),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Welcome back,',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                userName,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                userProvider.currentUser?.email ?? '',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppStyles.spacingL),
+        _buildQuickActionsHeader(),
+        const SizedBox(height: AppStyles.spacingM),
+        _buildActionCard(
+          label: 'Manage Users',
+          subtitle: 'Create, edit, disable, and delete users',
+          icon: Icons.people_outline,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ManageUsersScreen(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: AppStyles.spacingS),
+        _buildActionCard(
+          label: 'View Reports',
+          subtitle: 'Analytics and insights',
+          icon: Icons.bar_chart_rounded,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ViewReportsScreen(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: AppStyles.spacingS),
+        _buildActionCard(
+          label: 'Upload Customers',
+          subtitle: _isImportingCustomers
+              ? 'Import currently running...'
+              : 'Upload and import Excel workbook',
+          icon: Icons.upload_file_outlined,
+          isBusy: _isImportingCustomers,
+          onTap: () => _handleUploadCustomers(context),
+        ),
+        const SizedBox(height: AppStyles.spacingS),
+        _buildActionCard(
+          label: 'Settings',
+          subtitle: 'System configuration',
+          icon: Icons.settings_outlined,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: AppStyles.spacingS),
+        _buildActionCard(
+          label: 'Audit Logs',
+          subtitle: 'View tracked admin and data actions',
+          icon: Icons.history_edu_outlined,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AuditLogsScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: AppStyles.spacingS),
+        _buildActionCard(
+          label: 'Destructive Cleanup',
+          subtitle: 'Permanently remove live data collections',
+          icon: Icons.delete_forever_outlined,
+          accentColor: AppStyles.errorColor,
+          onTap: () => _runDestructiveCleanup(context),
+        ),
+      ],
+    );
+
+    if (isDesktop) {
+      return AdminDesktopShell(
+        title: 'Admin Dashboard',
+        selectedSection: AdminShellSection.dashboard,
+        onNavigate: _navigateDesktop,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationsScreen(),
+                ),
+              );
+            },
+            tooltip: 'Notifications',
+          ),
+        ],
+        content: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Dashboard',
+                style: TextStyle(
+                  color: AppStyles.textColor,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                userName,
+                style: TextStyle(
+                  color: AppStyles.textSecondaryColor,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 18),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardWidth = (constraints.maxWidth - 16) / 2;
+                  return Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: [
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildActionCard(
+                          label: 'Manage Users',
+                          subtitle: 'Create, edit, disable, and delete users',
+                          icon: Icons.people_outline,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ManageUsersScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildActionCard(
+                          label: 'View Reports',
+                          subtitle: 'Analytics and insights',
+                          icon: Icons.bar_chart_rounded,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ViewReportsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildActionCard(
+                          label: 'Upload Customers',
+                          subtitle: _isImportingCustomers
+                              ? 'Import currently running...'
+                              : 'Upload and import Excel workbook',
+                          icon: Icons.upload_file_outlined,
+                          isBusy: _isImportingCustomers,
+                          onTap: () => _handleUploadCustomers(context),
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildActionCard(
+                          label: 'Settings',
+                          subtitle: 'System configuration',
+                          icon: Icons.settings_outlined,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const SettingsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildActionCard(
+                          label: 'Audit Logs',
+                          subtitle: 'View tracked admin and data actions',
+                          icon: Icons.history_edu_outlined,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const AuditLogsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _buildActionCard(
+                          label: 'Destructive Cleanup',
+                          subtitle: 'Permanently remove live data collections',
+                          icon: Icons.delete_forever_outlined,
+                          accentColor: AppStyles.errorColor,
+                          onTap: () => _runDestructiveCleanup(context),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppStyles.scaffoldBackgroundColor,
@@ -181,413 +524,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppStyles.adminPrimaryColor, AppStyles.primaryColor],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              padding: const EdgeInsets.fromLTRB(
-                AppStyles.spacingL,
-                AppStyles.spacingL,
-                AppStyles.spacingL,
-                AppStyles.spacingXL,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome back,',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    userName,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    userProvider.currentUser?.email ?? '',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            Transform.translate(
-              offset: const Offset(0, -20),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppStyles.spacingM,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GridView.count(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: AppStyles.spacingM,
-                      mainAxisSpacing: AppStyles.spacingM,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      childAspectRatio: 1.5,
-                      children: [
-                        _buildStatCard(
-                          title: 'Total Users',
-                          value: '124',
-                          icon: Icons.people_outline,
-                          gradientColors: AppStyles.statCardGradients[0],
-                        ),
-                        _buildStatCard(
-                          title: 'Total Sales',
-                          value: '₱245K',
-                          icon: Icons.trending_up_rounded,
-                          gradientColors: AppStyles.statCardGradients[1],
-                        ),
-                        _buildStatCard(
-                          title: 'Pending Orders',
-                          value: '12',
-                          icon: Icons.pending_actions_rounded,
-                          gradientColors: AppStyles.statCardGradients[2],
-                        ),
-                        _buildStatCard(
-                          title: 'Products',
-                          value: '48',
-                          icon: Icons.inventory_2_outlined,
-                          gradientColors: AppStyles.statCardGradients[3],
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: AppStyles.spacingXL),
-
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppStyles.primaryColor.withValues(
-                              alpha: 0.08,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppStyles.borderRadiusSmall,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.dashboard_customize_rounded,
-                            color: AppStyles.primaryColor,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text('Quick Actions', style: AppStyles.headingStyle),
-                      ],
-                    ),
-                    const SizedBox(height: AppStyles.spacingM),
-
-                    _buildActionCard(
-                      label: 'Manage Users',
-                      subtitle: 'View and edit user accounts',
-                      icon: Icons.people_outline,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ManageUsersScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: AppStyles.spacingS),
-
-                    _buildActionCard(
-                      label: 'View Reports',
-                      subtitle: 'Analytics and insights',
-                      icon: Icons.bar_chart_rounded,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ViewReportsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: AppStyles.spacingS),
-
-                    _buildActionCard(
-                      label: 'Inventory',
-                      subtitle: 'Manage product inventory',
-                      icon: Icons.inventory_2_outlined,
-                      onTap: () {},
-                    ),
-                    const SizedBox(height: AppStyles.spacingS),
-
-                    _buildActionCard(
-                      label: 'Upload Customers',
-                      subtitle: 'Upload and import Excel workbook',
-                      icon: Icons.upload_file_outlined,
-                      onTap: () async {
-                        AppLogger.info(
-                          '[IMPORT][UI] Admin initiated customer workbook picker',
-                          tag: 'IMPORT',
-                        );
-
-                        PickedExcelFile? pickedFile;
-                        try {
-                          pickedFile = await pickExcelFile();
-                        } catch (e, st) {
-                          AppLogger.error(
-                            '[IMPORT][UI] File picker failed to read selected file',
-                            error: e,
-                            stackTrace: st,
-                            tag: 'IMPORT',
-                          );
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Unable to read selected file: $e'),
-                              backgroundColor: AppStyles.errorColor,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          return;
-                        }
-
-                        if (pickedFile == null) {
-                          AppLogger.warning(
-                            '[IMPORT][UI] File picker cancelled by user',
-                            tag: 'IMPORT',
-                          );
-                          return;
-                        }
-
-                        final bytes = pickedFile.bytes;
-                        AppLogger.info(
-                          '[IMPORT][UI] Selected file: ${pickedFile.name} (${bytes.length} bytes)',
-                          tag: 'IMPORT',
-                        );
-
-                        if (bytes.isEmpty) {
-                          AppLogger.warning(
-                            '[IMPORT][UI] Selected file had no readable bytes',
-                            tag: 'IMPORT',
-                          );
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Selected file could not be read.'),
-                              backgroundColor: AppStyles.errorColor,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          return;
-                        }
-
-                        const maxUploadBytes = 8 * 1024 * 1024;
-                        if (bytes.length > maxUploadBytes) {
-                          AppLogger.warning(
-                            '[IMPORT][UI] File too large: ${bytes.length} bytes (limit: $maxUploadBytes)',
-                            tag: 'IMPORT',
-                          );
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'File too large. Please keep the Excel file under 8 MB.',
-                              ),
-                              backgroundColor: AppStyles.errorColor,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          return;
-                        }
-
-                        if (!context.mounted) return;
-
-                        AppLogger.info(
-                          '[IMPORT][UI] Uploading ${pickedFile.name} to callable importDataFromExcelDirect',
-                          tag: 'IMPORT',
-                        );
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Uploading ${pickedFile.name}...'),
-                            backgroundColor: AppStyles.infoColor,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-
-                        try {
-                          final callable = FirebaseFunctions.instance
-                              .httpsCallable('importDataFromExcelDirect');
-                          final result = await callable.call(<String, dynamic>{
-                            'fileName': pickedFile.name,
-                            'fileBase64': base64Encode(bytes),
-                          });
-
-                          if (!context.mounted) return;
-
-                          final data = Map<String, dynamic>.from(
-                            result.data as Map,
-                          );
-                          final summary = Map<String, dynamic>.from(
-                            data['summary'] as Map? ?? <String, dynamic>{},
-                          );
-
-                          AppLogger.info(
-                            '[IMPORT][UI] Upload succeeded. Summary: customers=${summary['customers'] ?? 0}, '
-                            'accountReceivable=${summary['accountReceivable'] ?? 0}, '
-                            'itemMaster=${summary['itemMaster'] ?? 0}, '
-                            'itemsAvailable=${summary['itemsAvailable'] ?? 0}',
-                            tag: 'IMPORT',
-                          );
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Import completed: '
-                                '${summary['customers'] ?? 0} customers, '
-                                '${summary['accountReceivable'] ?? 0} receivables, '
-                                '${summary['itemMaster'] ?? 0} item master rows, '
-                                '${summary['itemsAvailable'] ?? 0} available item rows.',
-                              ),
-                              backgroundColor: AppStyles.successColor,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        } catch (e) {
-                          AppLogger.error(
-                            '[IMPORT][UI] Upload failed via callable importDataFromExcelDirect',
-                            error: e,
-                            tag: 'IMPORT',
-                          );
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to trigger import: $e'),
-                              backgroundColor: AppStyles.errorColor,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                    const SizedBox(height: AppStyles.spacingS),
-
-                    _buildActionCard(
-                      label: 'Destructive Cleanup',
-                      subtitle: 'Permanently remove live data collections',
-                      icon: Icons.delete_forever_outlined,
-                      onTap: () => _runDestructiveCleanup(context),
-                    ),
-                    const SizedBox(height: AppStyles.spacingS),
-
-                    _buildActionCard(
-                      label: 'Settings',
-                      subtitle: 'System configuration',
-                      icon: Icons.settings_outlined,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const SettingsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: AppStyles.spacingS),
-
-                    _buildActionCard(
-                      label: 'Audit Logs',
-                      subtitle: 'View tracked admin and data actions',
-                      icon: Icons.history_edu_outlined,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AuditLogsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: AppStyles.spacingXL),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required List<Color> gradientColors,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: gradientColors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
-        boxShadow: [
-          BoxShadow(
-            color: gradientColors[0].withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 28, color: Colors.white.withValues(alpha: 0.9)),
-            const Spacer(),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.9),
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: mobileBody,
     );
   }
 
@@ -596,59 +533,91 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required String subtitle,
     required IconData icon,
     required VoidCallback onTap,
+    Color accentColor = AppStyles.primaryColor,
+    bool isBusy = false,
   }) {
     return Container(
       decoration: AppStyles.cardDecoration,
       child: InkWell(
-        onTap: onTap,
+        onTap: isBusy ? null : onTap,
         borderRadius: BorderRadius.circular(AppStyles.borderRadiusLarge),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppStyles.primaryColor.withValues(alpha: 0.08),
+                  color: accentColor.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(
                     AppStyles.borderRadiusMedium,
                   ),
                 ),
-                child: Icon(icon, size: 24, color: AppStyles.primaryColor),
+                child: Icon(icon, size: 18, color: accentColor),
               ),
-              const SizedBox(width: AppStyles.spacingM),
+              const SizedBox(width: AppStyles.spacingS),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       label,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: AppStyles.textColor,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: AppStyles.textSecondaryColor,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 16,
-                color: AppStyles.textLightColor,
-              ),
+              isBusy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: AppStyles.textLightColor,
+                    ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildQuickActionsHeader() {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppStyles.primaryColor.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(AppStyles.borderRadiusSmall),
+          ),
+          child: const Icon(
+            Icons.dashboard_customize_rounded,
+            color: AppStyles.primaryColor,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text('Quick Actions', style: AppStyles.headingStyle),
+      ],
     );
   }
 }

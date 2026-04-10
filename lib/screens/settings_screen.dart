@@ -3,6 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/audit_service.dart';
 import '../services/firestore_tenant.dart';
 import '../styles/app_styles.dart';
+import '../widgets/admin_desktop_shell.dart';
+import 'admin_dashboard_screen.dart';
+import 'audit_logs_screen.dart';
+import 'manage_users_screen.dart';
+import 'notifications_screen.dart';
+import 'view_reports_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -226,8 +232,311 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _navigateDesktop(AdminShellSection section) {
+    Widget? destination;
+    switch (section) {
+      case AdminShellSection.dashboard:
+        destination = const AdminDashboardScreen();
+      case AdminShellSection.users:
+        destination = const ManageUsersScreen();
+      case AdminShellSection.reports:
+        destination = const ViewReportsScreen();
+      case AdminShellSection.settings:
+        return;
+      case AdminShellSection.auditLogs:
+        destination = const AuditLogsScreen();
+      case AdminShellSection.notifications:
+        destination = const NotificationsScreen();
+    }
+
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+    final body = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(AppStyles.spacingM),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Company Information Section
+                Text('Company Information', style: AppStyles.headingStyle),
+                const SizedBox(height: AppStyles.spacingM),
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      AppStyles.borderRadiusMedium,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppStyles.spacingM),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _companyNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Company Name',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.business),
+                          ),
+                        ),
+                        const SizedBox(height: AppStyles.spacingM),
+                        TextField(
+                          controller: _companyEmailController,
+                          decoration: const InputDecoration(
+                            labelText: 'Company Email',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: AppStyles.spacingM),
+                        TextField(
+                          controller: _companyPhoneController,
+                          decoration: const InputDecoration(
+                            labelText: 'Company Phone',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                          keyboardType: TextInputType.phone,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: AppStyles.spacingXL),
+
+                // Order Management Section
+                Text('Order Management', style: AppStyles.headingStyle),
+                const SizedBox(height: AppStyles.spacingM),
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      AppStyles.borderRadiusMedium,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        title: const Text('Auto-Approve Orders'),
+                        subtitle: const Text(
+                          'Automatically approve new orders',
+                        ),
+                        value: _autoApproveOrders,
+                        onChanged: (value) {
+                          setState(() {
+                            _autoApproveOrders = value;
+                          });
+                        },
+                        secondary: const Icon(Icons.check_circle_outline),
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        title: const Text('Email Notifications'),
+                        subtitle: const Text(
+                          'Send email alerts for new orders',
+                        ),
+                        value: _emailNotifications,
+                        onChanged: (value) {
+                          setState(() {
+                            _emailNotifications = value;
+                          });
+                        },
+                        secondary: const Icon(Icons.mail_outline),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: AppStyles.spacingXL),
+
+                // Inventory Management Section
+                Text('Inventory Management', style: AppStyles.headingStyle),
+                const SizedBox(height: AppStyles.spacingM),
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      AppStyles.borderRadiusMedium,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        title: const Text('Low Stock Alerts'),
+                        subtitle: const Text('Get notified when items run low'),
+                        value: _lowStockAlerts,
+                        onChanged: (value) {
+                          setState(() {
+                            _lowStockAlerts = value;
+                          });
+                        },
+                        secondary: const Icon(Icons.inventory_2_outlined),
+                      ),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.all(AppStyles.spacingM),
+                        child: TextField(
+                          controller: _lowStockController,
+                          decoration: const InputDecoration(
+                            labelText: 'Low Stock Threshold',
+                            helperText:
+                                'Alert when quantity falls below this number',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.warning_amber_outlined),
+                            suffixText: 'units',
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: AppStyles.spacingXL),
+
+                // System Maintenance Section
+                Text('System Maintenance', style: AppStyles.headingStyle),
+                const SizedBox(height: AppStyles.spacingM),
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      AppStyles.borderRadiusMedium,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppStyles.spacingM),
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Enable Scheduled Maintenance Cleanup',
+                          ),
+                          subtitle: const Text(
+                            'Automatically prune old maintenance/import records every day',
+                          ),
+                          value: _scheduledMaintenanceEnabled,
+                          onChanged: (value) {
+                            setState(() {
+                              _scheduledMaintenanceEnabled = value;
+                            });
+                          },
+                          secondary: const Icon(Icons.schedule_outlined),
+                        ),
+                        const SizedBox(height: AppStyles.spacingM),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _scheduledCleanupHourController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Cleanup Hour',
+                                  helperText: '0 to 23',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.access_time_outlined),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: AppStyles.spacingM),
+                            Expanded(
+                              child: TextField(
+                                controller: _scheduledCleanupMinuteController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Cleanup Minute',
+                                  helperText: '0 to 59',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.timelapse_outlined),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppStyles.spacingM),
+                        TextField(
+                          controller: _maintenanceRetentionController,
+                          decoration: const InputDecoration(
+                            labelText: 'Maintenance Retention',
+                            helperText:
+                                'Days to keep cleanup/import logs (minimum 1, maximum 3650)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.auto_delete_outlined),
+                            suffixText: 'days',
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: AppStyles.spacingM),
+                        TextField(
+                          controller: _auditLogRetentionController,
+                          decoration: const InputDecoration(
+                            labelText: 'Audit Log Retention',
+                            helperText:
+                                'Days to keep audit logs (minimum 30, maximum 3650)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.history_toggle_off_outlined),
+                            suffixText: 'days',
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: AppStyles.spacingXL),
+
+                // Save Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: _saveSettings,
+                    icon: const Icon(Icons.save),
+                    label: const Text('Save All Settings'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppStyles.adminPrimaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppStyles.borderRadiusMedium,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: AppStyles.spacingXL),
+              ],
+            ),
+          );
+
+    if (isDesktop) {
+      return AdminDesktopShell(
+        title: 'System Settings',
+        selectedSection: AdminShellSection.settings,
+        onNavigate: _navigateDesktop,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.save_outlined, color: Colors.white),
+            onPressed: _saveSettings,
+            tooltip: 'Save Settings',
+          ),
+        ],
+        content: body,
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppStyles.scaffoldBackgroundColor,
       appBar: AppBar(
@@ -243,275 +552,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(AppStyles.spacingM),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Company Information Section
-                  Text('Company Information', style: AppStyles.headingStyle),
-                  const SizedBox(height: AppStyles.spacingM),
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        AppStyles.borderRadiusMedium,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppStyles.spacingM),
-                      child: Column(
-                        children: [
-                          TextField(
-                            controller: _companyNameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Company Name',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.business),
-                            ),
-                          ),
-                          const SizedBox(height: AppStyles.spacingM),
-                          TextField(
-                            controller: _companyEmailController,
-                            decoration: const InputDecoration(
-                              labelText: 'Company Email',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.email_outlined),
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: AppStyles.spacingM),
-                          TextField(
-                            controller: _companyPhoneController,
-                            decoration: const InputDecoration(
-                              labelText: 'Company Phone',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.phone_outlined),
-                            ),
-                            keyboardType: TextInputType.phone,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: AppStyles.spacingXL),
-
-                  // Order Management Section
-                  Text('Order Management', style: AppStyles.headingStyle),
-                  const SizedBox(height: AppStyles.spacingM),
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        AppStyles.borderRadiusMedium,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        SwitchListTile(
-                          title: const Text('Auto-Approve Orders'),
-                          subtitle: const Text(
-                            'Automatically approve new orders',
-                          ),
-                          value: _autoApproveOrders,
-                          onChanged: (value) {
-                            setState(() {
-                              _autoApproveOrders = value;
-                            });
-                          },
-                          secondary: const Icon(Icons.check_circle_outline),
-                        ),
-                        const Divider(height: 1),
-                        SwitchListTile(
-                          title: const Text('Email Notifications'),
-                          subtitle: const Text(
-                            'Send email alerts for new orders',
-                          ),
-                          value: _emailNotifications,
-                          onChanged: (value) {
-                            setState(() {
-                              _emailNotifications = value;
-                            });
-                          },
-                          secondary: const Icon(Icons.mail_outline),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: AppStyles.spacingXL),
-
-                  // Inventory Management Section
-                  Text('Inventory Management', style: AppStyles.headingStyle),
-                  const SizedBox(height: AppStyles.spacingM),
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        AppStyles.borderRadiusMedium,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        SwitchListTile(
-                          title: const Text('Low Stock Alerts'),
-                          subtitle: const Text(
-                            'Get notified when items run low',
-                          ),
-                          value: _lowStockAlerts,
-                          onChanged: (value) {
-                            setState(() {
-                              _lowStockAlerts = value;
-                            });
-                          },
-                          secondary: const Icon(Icons.inventory_2_outlined),
-                        ),
-                        const Divider(height: 1),
-                        Padding(
-                          padding: const EdgeInsets.all(AppStyles.spacingM),
-                          child: TextField(
-                            controller: _lowStockController,
-                            decoration: const InputDecoration(
-                              labelText: 'Low Stock Threshold',
-                              helperText:
-                                  'Alert when quantity falls below this number',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.warning_amber_outlined),
-                              suffixText: 'units',
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: AppStyles.spacingXL),
-
-                  // System Maintenance Section
-                  Text('System Maintenance', style: AppStyles.headingStyle),
-                  const SizedBox(height: AppStyles.spacingM),
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        AppStyles.borderRadiusMedium,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppStyles.spacingM),
-                      child: Column(
-                        children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text(
-                              'Enable Scheduled Maintenance Cleanup',
-                            ),
-                            subtitle: const Text(
-                              'Automatically prune old maintenance/import records every day',
-                            ),
-                            value: _scheduledMaintenanceEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _scheduledMaintenanceEnabled = value;
-                              });
-                            },
-                            secondary: const Icon(Icons.schedule_outlined),
-                          ),
-                          const SizedBox(height: AppStyles.spacingM),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _scheduledCleanupHourController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Cleanup Hour',
-                                    helperText: '0 to 23',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(
-                                      Icons.access_time_outlined,
-                                    ),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                              const SizedBox(width: AppStyles.spacingM),
-                              Expanded(
-                                child: TextField(
-                                  controller: _scheduledCleanupMinuteController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Cleanup Minute',
-                                    helperText: '0 to 59',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.timelapse_outlined),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppStyles.spacingM),
-                          TextField(
-                            controller: _maintenanceRetentionController,
-                            decoration: const InputDecoration(
-                              labelText: 'Maintenance Retention',
-                              helperText:
-                                  'Days to keep cleanup/import logs (minimum 1, maximum 3650)',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.auto_delete_outlined),
-                              suffixText: 'days',
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: AppStyles.spacingM),
-                          TextField(
-                            controller: _auditLogRetentionController,
-                            decoration: const InputDecoration(
-                              labelText: 'Audit Log Retention',
-                              helperText:
-                                  'Days to keep audit logs (minimum 30, maximum 3650)',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(
-                                Icons.history_toggle_off_outlined,
-                              ),
-                              suffixText: 'days',
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: AppStyles.spacingXL),
-
-                  // Save Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: _saveSettings,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Save All Settings'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppStyles.adminPrimaryColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            AppStyles.borderRadiusMedium,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: AppStyles.spacingXL),
-                ],
-              ),
-            ),
+      body: body,
     );
   }
 }

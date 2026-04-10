@@ -8,6 +8,16 @@ import '../services/firestore_service.dart';
 import '../services/firestore_tenant.dart';
 import '../styles/app_styles.dart';
 import '../utils/app_logger.dart';
+import '../widgets/admin_desktop_shell.dart';
+import 'admin_dashboard_screen.dart';
+import 'audit_logs_screen.dart';
+import 'notifications_screen.dart';
+import 'settings_screen.dart';
+import 'view_reports_screen.dart';
+
+enum UserListFilter { all, admins, users, active, disabled }
+
+enum UserSortOption { nameAsc, nameDesc, emailAsc, role }
 
 class ManageUsersScreen extends StatefulWidget {
   const ManageUsersScreen({super.key});
@@ -18,6 +28,16 @@ class ManageUsersScreen extends StatefulWidget {
 
 class _ManageUsersScreenState extends State<ManageUsersScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  UserListFilter _activeFilter = UserListFilter.all;
+  UserSortOption _sortOption = UserSortOption.nameAsc;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _createUser() async {
     final nameController = TextEditingController();
@@ -429,9 +449,582 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     }
   }
 
+  List<UserModel> _applyFiltersAndSorting(List<UserModel> users) {
+    final query = _searchQuery.trim().toLowerCase();
+
+    final filtered = users.where((user) {
+      final matchesSearch =
+          query.isEmpty ||
+          user.name.toLowerCase().contains(query) ||
+          user.email.toLowerCase().contains(query) ||
+          user.role.toLowerCase().contains(query);
+
+      if (!matchesSearch) {
+        return false;
+      }
+
+      switch (_activeFilter) {
+        case UserListFilter.admins:
+          return user.role == 'admin';
+        case UserListFilter.users:
+          return user.role != 'admin';
+        case UserListFilter.active:
+          return !user.isDisabled;
+        case UserListFilter.disabled:
+          return user.isDisabled;
+        case UserListFilter.all:
+          return true;
+      }
+    }).toList();
+
+    filtered.sort((a, b) {
+      switch (_sortOption) {
+        case UserSortOption.nameAsc:
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        case UserSortOption.nameDesc:
+          return b.name.toLowerCase().compareTo(a.name.toLowerCase());
+        case UserSortOption.emailAsc:
+          return a.email.toLowerCase().compareTo(b.email.toLowerCase());
+        case UserSortOption.role:
+          return a.role.toLowerCase().compareTo(b.role.toLowerCase());
+      }
+    });
+
+    return filtered;
+  }
+
+  Widget _buildSummaryChip({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppStyles.borderRadiusMedium),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: color,
+              fontSize: 15,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppStyles.textSecondaryColor,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _navigateDesktop(AdminShellSection section) {
+    Widget? destination;
+    switch (section) {
+      case AdminShellSection.dashboard:
+        destination = const AdminDashboardScreen();
+      case AdminShellSection.users:
+        return;
+      case AdminShellSection.reports:
+        destination = const ViewReportsScreen();
+      case AdminShellSection.settings:
+        destination = const SettingsScreen();
+      case AdminShellSection.auditLogs:
+        destination = const AuditLogsScreen();
+      case AdminShellSection.notifications:
+        destination = const NotificationsScreen();
+    }
+
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = context.watch<UserProvider>().currentUser;
+    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+
+    final body = StreamBuilder<List<UserModel>>(
+      stream: _firestoreService.getUsersStream(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppStyles.spacingL),
+              child: Container(
+                decoration: AppStyles.cardDecoration,
+                padding: const EdgeInsets.all(AppStyles.spacingL),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 36,
+                      color: AppStyles.errorColor,
+                    ),
+                    const SizedBox(height: AppStyles.spacingS),
+                    const Text(
+                      'Unable to load users',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppStyles.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: AppStyles.spacingS),
+                Text('Loading users...'),
+              ],
+            ),
+          );
+        }
+
+        final users = snapshot.data ?? [];
+        final adminCount = users.where((u) => u.role == 'admin').length;
+        final disabledCount = users.where((u) => u.isDisabled).length;
+
+        final visibleUsers = _applyFiltersAndSorting(users);
+
+        if (users.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppStyles.spacingL),
+              child: Container(
+                decoration: AppStyles.cardDecoration,
+                padding: const EdgeInsets.all(AppStyles.spacingL),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.group_outlined,
+                      size: 44,
+                      color: AppStyles.textLightColor,
+                    ),
+                    SizedBox(height: AppStyles.spacingS),
+                    Text(
+                      'No users found in this company yet.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Tap Add User to create or attach a user account.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppStyles.textSecondaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.all(AppStyles.spacingM),
+          children: [
+            Container(
+              decoration: AppStyles.cardDecoration,
+              padding: const EdgeInsets.all(AppStyles.spacingM),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Directory Overview',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: AppStyles.spacingS),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildSummaryChip(
+                        label: 'Total Users',
+                        value: '${users.length}',
+                        color: AppStyles.primaryColor,
+                      ),
+                      _buildSummaryChip(
+                        label: 'Admins',
+                        value: '$adminCount',
+                        color: AppStyles.adminPrimaryColor,
+                      ),
+                      _buildSummaryChip(
+                        label: 'Disabled',
+                        value: '$disabledCount',
+                        color: AppStyles.errorColor,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppStyles.spacingM),
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                });
+                              },
+                              icon: const Icon(Icons.clear),
+                            ),
+                      hintText: 'Search name, email, or role',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppStyles.borderRadiusMedium,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppStyles.spacingS),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('All'),
+                          selected: _activeFilter == UserListFilter.all,
+                          onSelected: (_) => setState(() {
+                            _activeFilter = UserListFilter.all;
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Admins'),
+                          selected: _activeFilter == UserListFilter.admins,
+                          onSelected: (_) => setState(() {
+                            _activeFilter = UserListFilter.admins;
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Users'),
+                          selected: _activeFilter == UserListFilter.users,
+                          onSelected: (_) => setState(() {
+                            _activeFilter = UserListFilter.users;
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Active'),
+                          selected: _activeFilter == UserListFilter.active,
+                          onSelected: (_) => setState(() {
+                            _activeFilter = UserListFilter.active;
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Disabled'),
+                          selected: _activeFilter == UserListFilter.disabled,
+                          onSelected: (_) => setState(() {
+                            _activeFilter = UserListFilter.disabled;
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppStyles.spacingS),
+                  Row(
+                    children: [
+                      const Text(
+                        'Sort by:',
+                        style: TextStyle(
+                          color: AppStyles.textSecondaryColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      DropdownButton<UserSortOption>(
+                        value: _sortOption,
+                        underline: const SizedBox.shrink(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _sortOption = value;
+                          });
+                        },
+                        items: const [
+                          DropdownMenuItem(
+                            value: UserSortOption.nameAsc,
+                            child: Text('Name (A-Z)'),
+                          ),
+                          DropdownMenuItem(
+                            value: UserSortOption.nameDesc,
+                            child: Text('Name (Z-A)'),
+                          ),
+                          DropdownMenuItem(
+                            value: UserSortOption.emailAsc,
+                            child: Text('Email'),
+                          ),
+                          DropdownMenuItem(
+                            value: UserSortOption.role,
+                            child: Text('Role'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppStyles.spacingM),
+            if (visibleUsers.isEmpty)
+              Container(
+                decoration: AppStyles.cardDecoration,
+                padding: const EdgeInsets.all(AppStyles.spacingL),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.filter_alt_off_outlined,
+                      size: 36,
+                      color: AppStyles.textLightColor,
+                    ),
+                    SizedBox(height: AppStyles.spacingS),
+                    Text(
+                      'No users match your filters.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...visibleUsers.map((user) {
+                final isAdmin = user.role == 'admin';
+                final isSelf = currentUser?.uid == user.uid;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppStyles.spacingS),
+                  child: Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppStyles.borderRadiusMedium,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(AppStyles.spacingS),
+                      leading: CircleAvatar(
+                        backgroundColor: isAdmin
+                            ? AppStyles.adminPrimaryColor
+                            : AppStyles.primaryColor,
+                        child: Text(
+                          user.name.isNotEmpty
+                              ? user.name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        user.name.isNotEmpty ? user.name : 'No Name',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(user.email),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              _buildStatusChip(
+                                text: user.role.toUpperCase(),
+                                color: isAdmin
+                                    ? AppStyles.adminPrimaryColor
+                                    : Colors.grey,
+                              ),
+                              _buildStatusChip(
+                                text: user.isDisabled ? 'DISABLED' : 'ACTIVE',
+                                color: user.isDisabled
+                                    ? AppStyles.errorColor
+                                    : AppStyles.successColor,
+                              ),
+                              if (isSelf)
+                                _buildStatusChip(
+                                  text: 'YOU',
+                                  color: AppStyles.primaryColor,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (value) async {
+                          if (value == 'edit') {
+                            await _editUser(user);
+                            return;
+                          }
+
+                          if (value == 'toggle_status') {
+                            await _editUser(
+                              UserModel(
+                                uid: user.uid,
+                                email: user.email,
+                                name: user.name,
+                                role: user.role,
+                                companyId: user.companyId,
+                                companyName: user.companyName,
+                                firestoreDatabaseId: user.firestoreDatabaseId,
+                                isDisabled: !user.isDisabled,
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (value == 'toggle_role') {
+                            await _editUser(
+                              UserModel(
+                                uid: user.uid,
+                                email: user.email,
+                                name: user.name,
+                                role: isAdmin ? 'user' : 'admin',
+                                companyId: user.companyId,
+                                companyName: user.companyName,
+                                firestoreDatabaseId: user.firestoreDatabaseId,
+                                isDisabled: user.isDisabled,
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (value == 'delete') {
+                            await _deleteUser(user);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit_outlined, size: 20),
+                                SizedBox(width: 8),
+                                Text('Edit User'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'toggle_role',
+                            enabled: !isSelf,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isAdmin
+                                      ? Icons.arrow_downward
+                                      : Icons.arrow_upward,
+                                  size: 20,
+                                  color: isAdmin
+                                      ? Colors.orange
+                                      : AppStyles.successColor,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  isAdmin
+                                      ? 'Demote to User'
+                                      : 'Promote to Admin',
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'toggle_status',
+                            enabled: !isSelf,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  user.isDisabled
+                                      ? Icons.check_circle_outline
+                                      : Icons.block_outlined,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  user.isDisabled
+                                      ? 'Enable User'
+                                      : 'Disable User',
+                                ),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          PopupMenuItem(
+                            value: 'delete',
+                            enabled: !isSelf,
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                  color: Colors.red,
+                                ),
+                                SizedBox(width: 8),
+                                Text('Delete User'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        );
+      },
+    );
+
+    if (isDesktop) {
+      return AdminDesktopShell(
+        title: 'Manage Users',
+        selectedSection: AdminShellSection.users,
+        onNavigate: _navigateDesktop,
+        actions: [
+          IconButton(
+            onPressed: _createUser,
+            icon: const Icon(
+              Icons.person_add_alt_1_outlined,
+              color: Colors.white,
+            ),
+            tooltip: 'Add User',
+          ),
+        ],
+        content: body,
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppStyles.scaffoldBackgroundColor,
@@ -448,203 +1041,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
         icon: const Icon(Icons.person_add_alt_1_outlined),
         label: const Text('Add User'),
       ),
-      body: StreamBuilder<List<UserModel>>(
-        stream: _firestoreService.getUsersStream(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final users = snapshot.data ?? [];
-          if (users.isEmpty) {
-            return const Center(child: Text('No users found.'));
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(AppStyles.spacingM),
-            itemCount: users.length,
-            itemBuilder: (context, index) {
-              final user = users[index];
-              final isAdmin = user.role == 'admin';
-              final isSelf = currentUser?.uid == user.uid;
-
-              return Card(
-                elevation: 2,
-                margin: const EdgeInsets.only(bottom: AppStyles.spacingS),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(
-                    AppStyles.borderRadiusMedium,
-                  ),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(AppStyles.spacingS),
-                  leading: CircleAvatar(
-                    backgroundColor: isAdmin
-                        ? AppStyles.adminPrimaryColor
-                        : AppStyles.primaryColor,
-                    child: Text(
-                      user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    user.name.isNotEmpty ? user.name : 'No Name',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(user.email),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          _buildStatusChip(
-                            text: user.role.toUpperCase(),
-                            color: isAdmin
-                                ? AppStyles.adminPrimaryColor
-                                : Colors.grey,
-                          ),
-                          _buildStatusChip(
-                            text: user.isDisabled ? 'DISABLED' : 'ACTIVE',
-                            color: user.isDisabled
-                                ? AppStyles.errorColor
-                                : AppStyles.successColor,
-                          ),
-                          if (isSelf)
-                            _buildStatusChip(
-                              text: 'YOU',
-                              color: AppStyles.primaryColor,
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) async {
-                      if (value == 'edit') {
-                        await _editUser(user);
-                        return;
-                      }
-
-                      if (value == 'toggle_status') {
-                        await _editUser(
-                          UserModel(
-                            uid: user.uid,
-                            email: user.email,
-                            name: user.name,
-                            role: user.role,
-                            companyId: user.companyId,
-                            companyName: user.companyName,
-                            firestoreDatabaseId: user.firestoreDatabaseId,
-                            isDisabled: !user.isDisabled,
-                          ),
-                        );
-                        return;
-                      }
-
-                      if (value == 'toggle_role') {
-                        await _editUser(
-                          UserModel(
-                            uid: user.uid,
-                            email: user.email,
-                            name: user.name,
-                            role: isAdmin ? 'user' : 'admin',
-                            companyId: user.companyId,
-                            companyName: user.companyName,
-                            firestoreDatabaseId: user.firestoreDatabaseId,
-                            isDisabled: user.isDisabled,
-                          ),
-                        );
-                        return;
-                      }
-
-                      if (value == 'delete') {
-                        await _deleteUser(user);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit_outlined, size: 20),
-                            SizedBox(width: 8),
-                            Text('Edit User'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'toggle_role',
-                        enabled: !isSelf,
-                        child: Row(
-                          children: [
-                            Icon(
-                              isAdmin
-                                  ? Icons.arrow_downward
-                                  : Icons.arrow_upward,
-                              size: 20,
-                              color: isAdmin
-                                  ? Colors.orange
-                                  : AppStyles.successColor,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              isAdmin ? 'Demote to User' : 'Promote to Admin',
-                            ),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'toggle_status',
-                        enabled: !isSelf,
-                        child: Row(
-                          children: [
-                            Icon(
-                              user.isDisabled
-                                  ? Icons.check_circle_outline
-                                  : Icons.block_outlined,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              user.isDisabled ? 'Enable User' : 'Disable User',
-                            ),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'delete',
-                        enabled: !isSelf,
-                        child: const Row(
-                          children: [
-                            Icon(
-                              Icons.delete_outline,
-                              size: 20,
-                              color: Colors.red,
-                            ),
-                            SizedBox(width: 8),
-                            Text('Delete User'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
+      body: body,
     );
   }
 
