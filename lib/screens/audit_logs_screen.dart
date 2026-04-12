@@ -6,12 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_tenant.dart';
 import '../styles/app_styles.dart';
+import '../utils/admin_navigation.dart';
 import '../widgets/admin_desktop_shell.dart';
-import 'admin_dashboard_screen.dart';
-import 'manage_users_screen.dart';
-import 'notifications_screen.dart';
-import 'settings_screen.dart';
-import 'view_reports_screen.dart';
+import '../widgets/admin_screen_guard.dart';
 
 class AuditLogsScreen extends StatefulWidget {
   const AuditLogsScreen({super.key});
@@ -21,6 +18,8 @@ class AuditLogsScreen extends StatefulWidget {
 }
 
 class _AuditLogsScreenState extends State<AuditLogsScreen> {
+  static const int _loadStep = 250;
+  int _pageSize = _loadStep;
   String _query = '';
   String _selectedAction = 'all';
   String _selectedEntityType = 'all';
@@ -65,13 +64,29 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
 
   Future<void> _exportFilteredLogs() async {
     try {
-      final snapshot = await FirestoreTenant.instance.firestore
+      final allDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+      Query<Map<String, dynamic>> query = FirestoreTenant.instance.firestore
           .collection('auditLogs')
           .orderBy('timestamp', descending: true)
-          .limit(300)
-          .get();
+          .limit(300);
 
-      final filtered = _applyFilters(snapshot.docs);
+      QuerySnapshot<Map<String, dynamic>> snapshot;
+      do {
+        snapshot = await query.get();
+        allDocs.addAll(snapshot.docs);
+
+        if (snapshot.docs.isEmpty) {
+          break;
+        }
+
+        query = FirestoreTenant.instance.firestore
+            .collection('auditLogs')
+            .orderBy('timestamp', descending: true)
+            .startAfterDocument(snapshot.docs.last)
+            .limit(300);
+      } while (snapshot.docs.length == 300);
+
+      final filtered = _applyFilters(allDocs);
 
       if (filtered.isEmpty) {
         if (!mounted) return;
@@ -131,30 +146,17 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   }
 
   void _navigateDesktop(AdminShellSection section) {
-    Widget? destination;
-    switch (section) {
-      case AdminShellSection.dashboard:
-        destination = const AdminDashboardScreen();
-      case AdminShellSection.users:
-        destination = const ManageUsersScreen();
-      case AdminShellSection.reports:
-        destination = const ViewReportsScreen();
-      case AdminShellSection.settings:
-        destination = const SettingsScreen();
-      case AdminShellSection.auditLogs:
-        return;
-      case AdminShellSection.notifications:
-        destination = const NotificationsScreen();
-    }
-
-    Navigator.of(
+    navigateToAdminSection(
       context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+      section,
+      currentSection: AdminShellSection.auditLogs,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+    final isDesktop = MediaQuery.of(context).size.width >=
+      AdminDesktopShell.desktopBreakpoint;
     final body = Column(
       children: [
         Padding(
@@ -233,7 +235,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
             stream: FirestoreTenant.instance.firestore
                 .collection('auditLogs')
                 .orderBy('timestamp', descending: true)
-                .limit(300)
+                .limit(_pageSize)
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -248,92 +250,137 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                   snapshot.data?.docs ??
                   <QueryDocumentSnapshot<Map<String, dynamic>>>[];
               final filtered = _applyFilters(docs);
+              final hasMore = docs.length == _pageSize;
 
               if (filtered.isEmpty) {
-                return const Center(child: Text('No audit logs found.'));
+                return Column(
+                  children: [
+                    const Expanded(
+                      child: Center(child: Text('No audit logs found.')),
+                    ),
+                    if (hasMore)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _pageSize += _loadStep;
+                            });
+                          },
+                          icon: const Icon(Icons.expand_more),
+                          label: const Text('Load more logs'),
+                        ),
+                      ),
+                  ],
+                );
               }
 
-              return ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final data = filtered[index].data();
-                  final action = (data['action'] ?? 'unknown').toString();
-                  final entityType = (data['entityType'] ?? 'unknown')
-                      .toString();
-                  final actorEmail = (data['actorEmail'] ?? 'unknown')
-                      .toString();
-                  final entityId = (data['entityId'] ?? '').toString();
-                  final details =
-                      (data['details'] as Map<String, dynamic>?) ??
-                      <String, dynamic>{};
-                  final ts = data['timestamp'];
-                  final timestamp = ts is Timestamp
-                      ? DateFormat('yMMMd HH:mm:ss').format(ts.toDate())
-                      : 'pending...';
+              return Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final data = filtered[index].data();
+                        final action = (data['action'] ?? 'unknown').toString();
+                        final entityType = (data['entityType'] ?? 'unknown')
+                            .toString();
+                        final actorEmail = (data['actorEmail'] ?? 'unknown')
+                            .toString();
+                        final entityId = (data['entityId'] ?? '').toString();
+                        final details =
+                            (data['details'] as Map<String, dynamic>?) ??
+                            <String, dynamic>{};
+                        final ts = data['timestamp'];
+                        final timestamp = ts is Timestamp
+                            ? DateFormat('yMMMd HH:mm:ss').format(ts.toDate())
+                            : 'pending...';
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ExpansionTile(
-                      tilePadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 2,
-                      ),
-                      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      leading: CircleAvatar(
-                        radius: 18,
-                        backgroundColor: AppStyles.primaryColor.withValues(
-                          alpha: 0.08,
-                        ),
-                        child: Icon(
-                          _iconForAction(action),
-                          color: AppStyles.primaryColor,
-                          size: 18,
-                        ),
-                      ),
-                      title: Text(
-                        '${action.toUpperCase()} • $entityType',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        '$actorEmail\n$timestamp',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Entity ID: ${entityId.isEmpty ? 'N/A' : entityId}',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Details',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[700],
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ExpansionTile(
+                            tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 2,
                             ),
+                            childrenPadding: const EdgeInsets.fromLTRB(
+                              12,
+                              0,
+                              12,
+                              12,
+                            ),
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppStyles.primaryColor
+                                  .withValues(alpha: 0.08),
+                              child: Icon(
+                                _iconForAction(action),
+                                color: AppStyles.primaryColor,
+                                size: 18,
+                              ),
+                            ),
+                            title: Text(
+                              '${action.toUpperCase()} • $entityType',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '$actorEmail\n$timestamp',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Entity ID: ${entityId.isEmpty ? 'N/A' : entityId}',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Details',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  details.isEmpty
+                                      ? 'No additional details.'
+                                      : details.entries
+                                            .map((e) => '${e.key}: ${e.value}')
+                                            .join('\n'),
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            details.isEmpty
-                                ? 'No additional details.'
-                                : details.entries
-                                      .map((e) => '${e.key}: ${e.value}')
-                                      .join('\n'),
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
+                  ),
+                  if (hasMore)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _pageSize += _loadStep;
+                          });
+                        },
+                        icon: const Icon(Icons.expand_more),
+                        label: const Text('Load more logs'),
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -341,39 +388,42 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
       ],
     );
 
-    if (isDesktop) {
-      return AdminDesktopShell(
-        title: 'Audit Logs',
-        selectedSection: AdminShellSection.auditLogs,
-        onNavigate: _navigateDesktop,
-        actions: [
-          IconButton(
-            onPressed: _exportFilteredLogs,
-            icon: const Icon(Icons.download_outlined, color: Colors.white),
-            tooltip: 'Copy CSV',
-          ),
-        ],
-        content: body,
-      );
-    }
+    final screen = isDesktop
+        ? AdminDesktopShell(
+            title: 'Audit Logs',
+            selectedSection: AdminShellSection.auditLogs,
+            onNavigate: _navigateDesktop,
+            actions: [
+              IconButton(
+                onPressed: _exportFilteredLogs,
+                icon: const Icon(Icons.download_outlined, color: Colors.white),
+                tooltip: 'Copy CSV',
+              ),
+            ],
+            content: body,
+          )
+        : Scaffold(
+            backgroundColor: AppStyles.scaffoldBackgroundColor,
+            appBar: AppBar(
+              title: const Text(
+                'Audit Logs',
+                style: AppStyles.appBarTitleStyle,
+              ),
+              backgroundColor: AppStyles.adminPrimaryColor,
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+              actions: [
+                IconButton(
+                  onPressed: _exportFilteredLogs,
+                  icon: const Icon(Icons.download_outlined),
+                  tooltip: 'Copy CSV',
+                ),
+              ],
+            ),
+            body: body,
+          );
 
-    return Scaffold(
-      backgroundColor: AppStyles.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Audit Logs', style: AppStyles.appBarTitleStyle),
-        backgroundColor: AppStyles.adminPrimaryColor,
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: _exportFilteredLogs,
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Copy CSV',
-          ),
-        ],
-      ),
-      body: body,
-    );
+    return AdminScreenGuard(title: 'Audit Logs', child: screen);
   }
 
   IconData _iconForAction(String action) {

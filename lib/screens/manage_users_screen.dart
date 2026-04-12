@@ -7,13 +7,10 @@ import '../providers/user_provider.dart';
 import '../services/firestore_service.dart';
 import '../services/firestore_tenant.dart';
 import '../styles/app_styles.dart';
+import '../utils/admin_navigation.dart';
 import '../utils/app_logger.dart';
 import '../widgets/admin_desktop_shell.dart';
-import 'admin_dashboard_screen.dart';
-import 'audit_logs_screen.dart';
-import 'notifications_screen.dart';
-import 'settings_screen.dart';
-import 'view_reports_screen.dart';
+import '../widgets/admin_screen_guard.dart';
 
 enum UserListFilter { all, admins, users, active, disabled }
 
@@ -530,31 +527,18 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   }
 
   void _navigateDesktop(AdminShellSection section) {
-    Widget? destination;
-    switch (section) {
-      case AdminShellSection.dashboard:
-        destination = const AdminDashboardScreen();
-      case AdminShellSection.users:
-        return;
-      case AdminShellSection.reports:
-        destination = const ViewReportsScreen();
-      case AdminShellSection.settings:
-        destination = const SettingsScreen();
-      case AdminShellSection.auditLogs:
-        destination = const AuditLogsScreen();
-      case AdminShellSection.notifications:
-        destination = const NotificationsScreen();
-    }
-
-    Navigator.of(
+    navigateToAdminSection(
       context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+      section,
+      currentSection: AdminShellSection.users,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final currentUser = context.watch<UserProvider>().currentUser;
-    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+    final isDesktop = MediaQuery.of(context).size.width >=
+      AdminDesktopShell.desktopBreakpoint;
 
     final body = StreamBuilder<List<UserModel>>(
       stream: _firestoreService.getUsersStream(),
@@ -1007,42 +991,42 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
       },
     );
 
-    if (isDesktop) {
-      return AdminDesktopShell(
-        title: 'Manage Users',
-        selectedSection: AdminShellSection.users,
-        onNavigate: _navigateDesktop,
-        actions: [
-          IconButton(
-            onPressed: _createUser,
-            icon: const Icon(
-              Icons.person_add_alt_1_outlined,
-              color: Colors.white,
+    final screen = isDesktop
+        ? AdminDesktopShell(
+            title: 'Manage Users',
+            selectedSection: AdminShellSection.users,
+            onNavigate: _navigateDesktop,
+            actions: [
+              IconButton(
+                onPressed: _createUser,
+                icon: const Icon(
+                  Icons.person_add_alt_1_outlined,
+                  color: Colors.white,
+                ),
+                tooltip: 'Add User',
+              ),
+            ],
+            content: body,
+          )
+        : Scaffold(
+            backgroundColor: AppStyles.scaffoldBackgroundColor,
+            appBar: AppBar(
+              title: Text('Manage Users', style: AppStyles.appBarTitleStyle),
+              backgroundColor: AppStyles.adminPrimaryColor,
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
             ),
-            tooltip: 'Add User',
-          ),
-        ],
-        content: body,
-      );
-    }
+            floatingActionButton: FloatingActionButton.extended(
+              onPressed: _createUser,
+              backgroundColor: AppStyles.adminPrimaryColor,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: const Text('Add User'),
+            ),
+            body: body,
+          );
 
-    return Scaffold(
-      backgroundColor: AppStyles.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text('Manage Users', style: AppStyles.appBarTitleStyle),
-        backgroundColor: AppStyles.adminPrimaryColor,
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createUser,
-        backgroundColor: AppStyles.adminPrimaryColor,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.person_add_alt_1_outlined),
-        label: const Text('Add User'),
-      ),
-      body: body,
-    );
+    return AdminScreenGuard(title: 'Manage Users', child: screen);
   }
 
   Widget _buildStatusChip({required String text, required Color color}) {

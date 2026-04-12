@@ -7,12 +7,9 @@ import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../services/notification_service.dart';
 import '../styles/app_styles.dart';
+import '../utils/admin_navigation.dart';
 import '../widgets/admin_desktop_shell.dart';
-import 'admin_dashboard_screen.dart';
-import 'audit_logs_screen.dart';
-import 'manage_users_screen.dart';
-import 'settings_screen.dart';
-import 'view_reports_screen.dart';
+import '../widgets/admin_screen_guard.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -41,6 +38,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         uid: uid,
         isAdmin: isAdmin,
       );
+    } else {
+      _future = null;
     }
   }
 
@@ -76,31 +75,69 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _navigateDesktop(AdminShellSection section) {
-    Widget? destination;
-    switch (section) {
-      case AdminShellSection.dashboard:
-        destination = const AdminDashboardScreen();
-      case AdminShellSection.users:
-        destination = const ManageUsersScreen();
-      case AdminShellSection.reports:
-        destination = const ViewReportsScreen();
-      case AdminShellSection.settings:
-        destination = const SettingsScreen();
-      case AdminShellSection.auditLogs:
-        destination = const AuditLogsScreen();
-      case AdminShellSection.notifications:
-        return;
-    }
-
-    Navigator.of(
+    navigateToAdminSection(
       context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+      section,
+      currentSection: AdminShellSection.notifications,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM d, yyyy • HH:mm');
-    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+    final isDesktop = MediaQuery.of(context).size.width >=
+      AdminDesktopShell.desktopBreakpoint;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null) {
+      return AdminScreenGuard(
+        title: 'Notifications',
+        child: Scaffold(
+          backgroundColor: AppStyles.scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: const Text(
+              'Notifications',
+              style: AppStyles.appBarTitleStyle,
+            ),
+            backgroundColor: AppStyles.primaryColor,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppStyles.spacingL),
+              child: Container(
+                decoration: AppStyles.cardDecoration,
+                padding: const EdgeInsets.all(AppStyles.spacingL),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 40,
+                      color: AppStyles.errorColor,
+                    ),
+                    SizedBox(height: AppStyles.spacingS),
+                    Text(
+                      'Session expired',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Sign in again to view notifications.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppStyles.textSecondaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     final body = RefreshIndicator(
       onRefresh: _refresh,
@@ -206,37 +243,40 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
     );
 
-    if (isDesktop) {
-      return AdminDesktopShell(
-        title: 'Notifications',
-        selectedSection: AdminShellSection.notifications,
-        onNavigate: _navigateDesktop,
-        actions: [
-          IconButton(
-            onPressed: _markAllAsRead,
-            icon: const Icon(Icons.done_all_outlined, color: Colors.white),
-            tooltip: 'Mark all as read',
-          ),
-        ],
-        content: body,
-      );
-    }
+    final screen = isDesktop
+        ? AdminDesktopShell(
+            title: 'Notifications',
+            selectedSection: AdminShellSection.notifications,
+            onNavigate: _navigateDesktop,
+            actions: [
+              IconButton(
+                onPressed: _markAllAsRead,
+                icon: const Icon(Icons.done_all_outlined, color: Colors.white),
+                tooltip: 'Mark all as read',
+              ),
+            ],
+            content: body,
+          )
+        : Scaffold(
+            backgroundColor: AppStyles.scaffoldBackgroundColor,
+            appBar: AppBar(
+              title: const Text(
+                'Notifications',
+                style: AppStyles.appBarTitleStyle,
+              ),
+              backgroundColor: AppStyles.primaryColor,
+              iconTheme: const IconThemeData(color: Colors.white),
+              actions: [
+                IconButton(
+                  onPressed: _markAllAsRead,
+                  icon: const Icon(Icons.done_all_outlined),
+                  tooltip: 'Mark all as read',
+                ),
+              ],
+            ),
+            body: body,
+          );
 
-    return Scaffold(
-      backgroundColor: AppStyles.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Notifications', style: AppStyles.appBarTitleStyle),
-        backgroundColor: AppStyles.primaryColor,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            onPressed: _markAllAsRead,
-            icon: const Icon(Icons.done_all_outlined),
-            tooltip: 'Mark all as read',
-          ),
-        ],
-      ),
-      body: body,
-    );
+    return AdminScreenGuard(title: 'Notifications', child: screen);
   }
 }

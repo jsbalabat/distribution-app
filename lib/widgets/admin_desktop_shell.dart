@@ -14,6 +14,8 @@ enum AdminShellSection {
 }
 
 class AdminDesktopShell extends StatelessWidget {
+  static const double desktopBreakpoint = 1100;
+
   const AdminDesktopShell({
     super.key,
     required this.title,

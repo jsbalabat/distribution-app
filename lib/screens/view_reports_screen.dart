@@ -3,48 +3,40 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 import '../widgets/admin_desktop_shell.dart';
-import 'admin_dashboard_screen.dart';
-import 'audit_logs_screen.dart';
-import 'manage_users_screen.dart';
-import 'notifications_screen.dart';
-import 'settings_screen.dart';
+import '../widgets/admin_screen_guard.dart';
 import '../services/firestore_service.dart';
 import '../styles/app_styles.dart';
+import '../utils/admin_navigation.dart';
 import '../utils/requisition_fields.dart';
 
-class ViewReportsScreen extends StatelessWidget {
+class ViewReportsScreen extends StatefulWidget {
   const ViewReportsScreen({super.key});
 
-  void _navigateDesktop(BuildContext context, AdminShellSection section) {
-    Widget? destination;
-    switch (section) {
-      case AdminShellSection.dashboard:
-        destination = const AdminDashboardScreen();
-      case AdminShellSection.users:
-        destination = const ManageUsersScreen();
-      case AdminShellSection.reports:
-        return;
-      case AdminShellSection.settings:
-        destination = const SettingsScreen();
-      case AdminShellSection.auditLogs:
-        destination = const AuditLogsScreen();
-      case AdminShellSection.notifications:
-        destination = const NotificationsScreen();
-    }
+  @override
+  State<ViewReportsScreen> createState() => _ViewReportsScreenState();
+}
 
-    Navigator.of(
+class _ViewReportsScreenState extends State<ViewReportsScreen> {
+  static const int _loadStep = 250;
+  int _reportLimit = _loadStep;
+
+  void _navigateDesktop(BuildContext context, AdminShellSection section) {
+    navigateToAdminSection(
       context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));
+      section,
+      currentSection: AdminShellSection.reports,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final firestoreService = FirestoreService();
     final currencyFormat = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
-    final isDesktop = MediaQuery.of(context).size.width >= 1100;
+    final isDesktop = MediaQuery.of(context).size.width >=
+      AdminDesktopShell.desktopBreakpoint;
 
     final body = StreamBuilder<QuerySnapshot>(
-      stream: firestoreService.getAllSubmissionsStream(limit: 500),
+      stream: firestoreService.getAllSubmissionsStream(limit: _reportLimit),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(child: Text('Error: ${snapshot.error}'));
@@ -95,6 +87,7 @@ class ViewReportsScreen extends StatelessWidget {
         final topProducts = productSales.entries.toList()
           ..sort((a, b) => b.value.compareTo(a.value)); // Descending
         final top5Products = topProducts.take(5).toList();
+        final hasMore = docs.length == _reportLimit;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(AppStyles.spacingM),
@@ -270,34 +263,48 @@ class ViewReportsScreen extends StatelessWidget {
                   );
                 },
               ),
+              if (hasMore) ...[
+                const SizedBox(height: AppStyles.spacingM),
+                Center(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _reportLimit += _loadStep;
+                      });
+                    },
+                    icon: const Icon(Icons.expand_more),
+                    label: const Text('Load more transactions'),
+                  ),
+                ),
+              ],
             ],
           ),
         );
       },
     );
 
-    if (isDesktop) {
-      return AdminDesktopShell(
-        title: 'Analytics & Reports',
-        selectedSection: AdminShellSection.reports,
-        onNavigate: (section) => _navigateDesktop(context, section),
-        content: body,
-      );
-    }
+    final screen = isDesktop
+        ? AdminDesktopShell(
+            title: 'Analytics & Reports',
+            selectedSection: AdminShellSection.reports,
+            onNavigate: (section) => _navigateDesktop(context, section),
+            content: body,
+          )
+        : Scaffold(
+            backgroundColor: AppStyles.scaffoldBackgroundColor,
+            appBar: AppBar(
+              title: const Text(
+                'Analytics & Reports',
+                style: AppStyles.appBarTitleStyle,
+              ),
+              backgroundColor: AppStyles.adminPrimaryColor,
+              iconTheme: const IconThemeData(color: Colors.white),
+              elevation: 0,
+            ),
+            body: body,
+          );
 
-    return Scaffold(
-      backgroundColor: AppStyles.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text(
-          'Analytics & Reports',
-          style: AppStyles.appBarTitleStyle,
-        ),
-        backgroundColor: AppStyles.adminPrimaryColor,
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-      ),
-      body: body,
-    );
+    return AdminScreenGuard(title: 'Analytics & Reports', child: screen);
   }
 
   Widget _buildSummaryCard({
