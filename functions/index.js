@@ -1233,6 +1233,7 @@ exports.adminCreateUserInTenant = onCall(
           companyId: companyId,
           firestoreDatabaseId: tenant.databaseId,
           isDisabled: isDisabled,
+          disabled: isDisabled,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           createdBy: callerUid,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1326,6 +1327,7 @@ exports.adminUpdateUserInTenant = onCall(
           companyId: companyId,
           firestoreDatabaseId: tenant.databaseId,
           isDisabled: isDisabled,
+          disabled: isDisabled,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedBy: callerUid,
         }, {merge: true});

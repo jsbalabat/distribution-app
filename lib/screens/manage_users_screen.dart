@@ -446,6 +446,68 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     }
   }
 
+  Future<void> _toggleUserStatus(UserModel user) async {
+    final currentUser = context.read<UserProvider>().currentUser;
+    final isSelf = user.uid == currentUser?.uid;
+
+    if (isSelf) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You cannot disable or enable your own account.'),
+          backgroundColor: AppStyles.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final nextDisabledValue = !user.isDisabled;
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'adminUpdateUserInTenant',
+      );
+      await callable.call(<String, dynamic>{
+        'targetUid': user.uid,
+        'name': user.name,
+        'email': user.email,
+        'role': user.role,
+        'isDisabled': nextDisabledValue,
+        'password': '',
+        'actorCompanyIdentifier': currentUser?.companyId,
+        'actorDatabaseId': FirestoreTenant.instance.databaseId,
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            nextDisabledValue
+                ? 'User has been disabled.'
+                : 'User has been enabled.',
+          ),
+          backgroundColor: AppStyles.successColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to toggle user status',
+        error: error,
+        stackTrace: stackTrace,
+        tag: 'USERS',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update user status: $error'),
+          backgroundColor: AppStyles.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   List<UserModel> _applyFiltersAndSorting(List<UserModel> users) {
     final query = _searchQuery.trim().toLowerCase();
 
@@ -537,8 +599,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = context.watch<UserProvider>().currentUser;
-    final isDesktop = MediaQuery.of(context).size.width >=
-      AdminDesktopShell.desktopBreakpoint;
+    final isDesktop =
+        MediaQuery.of(context).size.width >=
+        AdminDesktopShell.desktopBreakpoint;
 
     final body = StreamBuilder<List<UserModel>>(
       stream: _firestoreService.getUsersStream(),
@@ -875,18 +938,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           }
 
                           if (value == 'toggle_status') {
-                            await _editUser(
-                              UserModel(
-                                uid: user.uid,
-                                email: user.email,
-                                name: user.name,
-                                role: user.role,
-                                companyId: user.companyId,
-                                companyName: user.companyName,
-                                firestoreDatabaseId: user.firestoreDatabaseId,
-                                isDisabled: !user.isDisabled,
-                              ),
-                            );
+                            await _toggleUserStatus(user);
                             return;
                           }
 

@@ -30,7 +30,7 @@ class UserModel {
       companyName: data['companyName'] ?? '',
       firestoreDatabaseId:
           data['firestoreDatabaseId'] ?? data['databaseId'] ?? '(default)',
-      isDisabled: data['isDisabled'] == true,
+      isDisabled: data['isDisabled'] == true || data['disabled'] == true,
     );
   }
 
@@ -43,6 +43,7 @@ class UserModel {
       'companyName': companyName,
       'firestoreDatabaseId': firestoreDatabaseId,
       'isDisabled': isDisabled,
+      'disabled': isDisabled,
     };
   }
 
