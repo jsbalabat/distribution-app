@@ -155,6 +155,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  DateTime _extractDashboardTimestamp(Map<String, dynamic> data) {
+    final value = data['timeStamp'] ?? data['timestamp'] ?? data['createdAt'];
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+    if (value is DateTime) {
+      return value;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortDashboardDocs(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final sortedDocs = [...docs];
+    sortedDocs.sort((left, right) {
+      final leftData = left.data();
+      final rightData = right.data();
+      final rightTimestamp = _extractDashboardTimestamp(rightData);
+      final leftTimestamp = _extractDashboardTimestamp(leftData);
+      return rightTimestamp.compareTo(leftTimestamp);
+    });
+
+    if (sortedDocs.length > _maxDashboardRecords) {
+      return sortedDocs.sublist(0, _maxDashboardRecords);
+    }
+
+    return sortedDocs;
+  }
+
+  String _dashboardErrorMessage(Object? error) {
+    final text = error?.toString() ?? 'Unknown error';
+    if (text.contains('permission-denied')) {
+      return 'Dashboard access was denied for this tenant. Check Firestore rules for company B.';
+    }
+    if (text.contains('failed-precondition') || text.contains('index')) {
+      return 'Dashboard data is not indexed for this tenant. The page is now using a safer query path.';
+    }
+    return 'Something went wrong loading your dashboard.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -206,8 +247,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         stream: FirestoreTenant.instance.firestore
             .collection('salesRequisitions')
             .where('userID', isEqualTo: uid)
-            .orderBy('timeStamp', descending: true)
-            .limit(_maxDashboardRecords)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -228,8 +267,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Something went wrong.',
+                    _dashboardErrorMessage(snapshot.error),
                     style: TextStyle(fontSize: 18, color: Colors.grey[800]),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   ElevatedButton(
@@ -241,7 +281,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     onPressed: () {
-                      // Refresh action
+                      setState(() {});
                     },
                     child: const Text('Retry'),
                   ),
@@ -250,7 +290,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             );
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final docs = _sortDashboardDocs(snapshot.data?.docs ?? []);
 
           if (docs.isEmpty) {
             return Center(

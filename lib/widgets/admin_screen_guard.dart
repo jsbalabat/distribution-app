@@ -21,6 +21,20 @@ class AdminScreenGuard extends StatelessWidget {
       );
     }
 
+    if (!userProvider.isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/', (Route<dynamic> route) => false);
+      });
+
+      return const Scaffold(
+        backgroundColor: AppStyles.scaffoldBackgroundColor,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (!userProvider.isAdmin) {
       return Scaffold(
         backgroundColor: AppStyles.scaffoldBackgroundColor,
