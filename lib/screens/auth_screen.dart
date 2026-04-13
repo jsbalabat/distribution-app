@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import '../styles/app_styles.dart';
 import '../utils/app_logger.dart';
+import '../utils/login_error_message.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -67,10 +68,7 @@ class _AuthScreenState extends State<AuthScreen> {
       AppLogger.error('UI login submit failed', error: e, tag: 'AUTH_UI');
 
       setState(() {
-        final raw = e.toString();
-        _errorMessage = raw.startsWith('Exception: ')
-            ? raw.substring('Exception: '.length)
-            : raw;
+        _errorMessage = toLoginFailureMessage(e);
       });
     } finally {
       // Check if widget is still mounted before setting state

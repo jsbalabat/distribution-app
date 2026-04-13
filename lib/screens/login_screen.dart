@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../styles/app_styles.dart';
 import '../utils/app_logger.dart';
+import '../utils/login_error_message.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,8 +17,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _companyIdentifierController = TextEditingController();
   bool _loading = false;
+  String? _companyError;
   String? _emailError;
   String? _passwordError;
+  String? _loginError;
 
   @override
   void dispose() {
@@ -36,8 +39,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     // Reset previous errors
     setState(() {
+      _companyError = null;
       _emailError = null;
       _passwordError = null;
+      _loginError = null;
       _loading = true;
     });
 
@@ -65,7 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (_companyIdentifierController.text.trim().isEmpty) {
       setState(() {
-        _emailError = "Company identifier is required";
+        _companyError = "Company identifier is required";
       });
       isValid = false;
     }
@@ -95,10 +100,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       AppLogger.error('Legacy login submit failed', error: e, tag: 'AUTH_UI');
 
-      final message = e.toString().replaceFirst('Exception: ', '');
       if (mounted) {
         setState(() {
-          _emailError = message;
+          _loginError = toLoginFailureMessage(e);
         });
       }
     } finally {
@@ -191,6 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: const TextStyle(color: AppStyles.textColor),
                           decoration: InputDecoration(
                             hintText: "Enter company identifier (e.g. acme)",
+                            errorText: _companyError,
                             filled: true,
                             fillColor: Colors.grey[100],
                             border: OutlineInputBorder(
@@ -202,6 +207,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: AppStyles.primaryColor,
                             ),
                           ),
+                          onChanged: (value) {
+                            if (_companyError != null || _loginError != null) {
+                              setState(() {
+                                _companyError = null;
+                                _loginError = null;
+                              });
+                            }
+                          },
                         ),
                         const SizedBox(height: 20),
 
@@ -236,9 +249,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           onChanged: (value) {
-                            if (_emailError != null) {
+                            if (_emailError != null || _loginError != null) {
                               setState(() {
                                 _emailError = null;
+                                _loginError = null;
                               });
                             }
                           },
@@ -276,13 +290,52 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           onChanged: (value) {
-                            if (_passwordError != null) {
+                            if (_passwordError != null || _loginError != null) {
                               setState(() {
                                 _passwordError = null;
+                                _loginError = null;
                               });
                             }
                           },
                         ),
+                        if (_loginError != null) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppStyles.errorColor.withValues(
+                                alpha: 0.08,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: AppStyles.errorColor.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  color: AppStyles.errorColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _loginError!,
+                                    style: const TextStyle(
+                                      color: AppStyles.errorColor,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 30),
 
                         // Login Button
