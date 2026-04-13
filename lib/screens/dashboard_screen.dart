@@ -166,13 +166,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortDashboardDocs(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  List<QueryDocumentSnapshot<Object?>> _sortDashboardDocs(
+    List<QueryDocumentSnapshot<Object?>> docs,
   ) {
     final sortedDocs = [...docs];
     sortedDocs.sort((left, right) {
-      final leftData = left.data();
-      final rightData = right.data();
+      final leftData = (left.data() as Map<String, dynamic>? ?? {});
+      final rightData = (right.data() as Map<String, dynamic>? ?? {});
       final rightTimestamp = _extractDashboardTimestamp(rightData);
       final leftTimestamp = _extractDashboardTimestamp(leftData);
       return rightTimestamp.compareTo(leftTimestamp);
@@ -355,7 +355,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             itemCount: docs.length,
             itemBuilder: (context, index) {
               final doc = docs[index];
-              final data = doc.data() as Map<String, dynamic>;
+              final data =
+                  (doc.data() as Map<String, dynamic>? ?? <String, dynamic>{});
               final timestamp = data['timeStamp'] as Timestamp?;
               final date = timestamp?.toDate();
 
@@ -365,7 +366,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   : 'Unknown Date';
 
               final totalAmount = data['totalAmount'] ?? 0.0;
-              final items = data['items'] as List<dynamic>? ?? [];
+              final items =
+                  (data['items'] as List<dynamic>? ?? const <dynamic>[])
+                      .whereType<Map>()
+                      .map((item) => Map<String, dynamic>.from(item))
+                      .toList();
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 16),

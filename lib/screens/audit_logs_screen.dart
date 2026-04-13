@@ -155,8 +155,9 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width >=
-      AdminDesktopShell.desktopBreakpoint;
+    final isDesktop =
+        MediaQuery.of(context).size.width >=
+        AdminDesktopShell.desktopBreakpoint;
     final body = Column(
       children: [
         Padding(
@@ -179,7 +180,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _selectedAction,
+                  initialValue: _selectedAction,
                   decoration: const InputDecoration(labelText: 'Action'),
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All Actions')),
@@ -201,7 +202,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _selectedEntityType,
+                  initialValue: _selectedEntityType,
                   decoration: const InputDecoration(labelText: 'Entity'),
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All Entities')),

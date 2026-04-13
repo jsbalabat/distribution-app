@@ -7,7 +7,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:new_test_store/app.dart';
 
 void main() {
   testWidgets('renders a basic Material app scaffold', (tester) async {

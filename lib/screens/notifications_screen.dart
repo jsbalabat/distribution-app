@@ -85,8 +85,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM d, yyyy • HH:mm');
-    final isDesktop = MediaQuery.of(context).size.width >=
-      AdminDesktopShell.desktopBreakpoint;
+    final isDesktop =
+        MediaQuery.of(context).size.width >=
+        AdminDesktopShell.desktopBreakpoint;
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
     if (uid == null) {
@@ -174,7 +175,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
             itemCount: notifications.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final doc = notifications[index];
               final data = doc.data();

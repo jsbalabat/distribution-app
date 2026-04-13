@@ -31,8 +31,6 @@ void navigateToAdminSection(
       destination = const NotificationsScreen();
   }
 
-  if (destination == null) return;
-
   Navigator.of(
     context,
   ).pushReplacement(MaterialPageRoute(builder: (_) => destination!));

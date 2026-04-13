@@ -89,7 +89,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                     ),
                     const SizedBox(height: AppStyles.spacingM),
                     DropdownButtonFormField<String>(
-                      value: role,
+                      initialValue: role,
                       decoration: const InputDecoration(
                         labelText: 'Role',
                         border: OutlineInputBorder(),
@@ -156,6 +156,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
       return;
     }
 
+    if (!mounted) return;
     final currentUser = context.read<UserProvider>().currentUser;
     try {
       final callable = FirebaseFunctions.instance.httpsCallable(
@@ -252,7 +253,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                     ),
                     const SizedBox(height: AppStyles.spacingM),
                     DropdownButtonFormField<String>(
-                      value: role,
+                      initialValue: role,
                       decoration: const InputDecoration(
                         labelText: 'Role',
                         border: OutlineInputBorder(),
