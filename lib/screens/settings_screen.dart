@@ -39,12 +39,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _companyPhone = '';
   String _approvalEmailPrimary = '';
   String _approvalEmailSecondary = '';
+  String _approvalEmailBodyPrimary =
+      'Sales requisition {{sorNumber}} for {{customerName}} requires review.\n'
+      'Detected notices: {{reasonText}}.\n'
+      'Please review the attached invoice PDF.';
+  String _approvalEmailBodySecondary =
+      'Sales requisition {{sorNumber}} for {{customerName}} was submitted without notices.\n'
+      'Please see attached invoice PDF for reference.';
 
   final _companyNameController = TextEditingController();
   final _companyEmailController = TextEditingController();
   final _companyPhoneController = TextEditingController();
   final _approvalEmailPrimaryController = TextEditingController();
   final _approvalEmailSecondaryController = TextEditingController();
+  final _approvalEmailBodyPrimaryController = TextEditingController();
+  final _approvalEmailBodySecondaryController = TextEditingController();
   final _lowStockController = TextEditingController();
   final _auditLogRetentionController = TextEditingController();
   final _scheduledCleanupHourController = TextEditingController();
@@ -64,6 +73,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _companyPhoneController.dispose();
     _approvalEmailPrimaryController.dispose();
     _approvalEmailSecondaryController.dispose();
+    _approvalEmailBodyPrimaryController.dispose();
+    _approvalEmailBodySecondaryController.dispose();
     _lowStockController.dispose();
     _auditLogRetentionController.dispose();
     _scheduledCleanupHourController.dispose();
@@ -130,6 +141,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return null;
   }
 
+  String? _validateEmailBody(String? value, String label) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return '$label is required.';
+    if (text.length < 10) return '$label is too short.';
+    return null;
+  }
+
   String? _validatePhone(String? value) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) return 'Company phone is required.';
@@ -187,12 +205,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _approvalEmailSecondary = (data['approvalEmailSecondary'] ?? '')
               .toString()
               .trim();
+          _approvalEmailBodyPrimary =
+              (data['approvalEmailBodyPrimary'] ?? _approvalEmailBodyPrimary)
+                  .toString()
+                  .trim();
+          _approvalEmailBodySecondary =
+              (data['approvalEmailBodySecondary'] ??
+                      _approvalEmailBodySecondary)
+                  .toString()
+                  .trim();
 
           _companyNameController.text = _companyName;
           _companyEmailController.text = _companyEmail;
           _companyPhoneController.text = _companyPhone;
           _approvalEmailPrimaryController.text = _approvalEmailPrimary;
           _approvalEmailSecondaryController.text = _approvalEmailSecondary;
+          _approvalEmailBodyPrimaryController.text = _approvalEmailBodyPrimary;
+          _approvalEmailBodySecondaryController.text =
+              _approvalEmailBodySecondary;
           _lowStockController.text = _lowStockThreshold.toString();
           _auditLogRetentionController.text = _auditLogRetentionDays.toString();
           _scheduledCleanupHourController.text = _scheduledCleanupHour
@@ -207,6 +237,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() {
           _approvalEmailPrimaryController.text = _approvalEmailPrimary;
           _approvalEmailSecondaryController.text = _approvalEmailSecondary;
+          _approvalEmailBodyPrimaryController.text = _approvalEmailBodyPrimary;
+          _approvalEmailBodySecondaryController.text =
+              _approvalEmailBodySecondary;
           _auditLogRetentionController.text = _auditLogRetentionDays.toString();
           _scheduledCleanupHourController.text = _scheduledCleanupHour
               .toString();
@@ -249,6 +282,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final approvalEmailPrimary = _approvalEmailPrimaryController.text.trim();
     final approvalEmailSecondary = _approvalEmailSecondaryController.text
         .trim();
+    final approvalEmailBodyPrimary = _approvalEmailBodyPrimaryController.text
+        .trim();
+    final approvalEmailBodySecondary = _approvalEmailBodySecondaryController
+        .text
+        .trim();
 
     final autoEmailCallable = FirebaseFunctions.instanceFor(
       region: 'asia-southeast1',
@@ -259,6 +297,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'autoEmailEnabled': _autoEmailEnabled,
         'approvalEmailPrimary': approvalEmailPrimary,
         'approvalEmailSecondary': approvalEmailSecondary,
+        'approvalEmailBodyPrimary': approvalEmailBodyPrimary,
+        'approvalEmailBodySecondary': approvalEmailBodySecondary,
         'approvalEmailsLocked': _approvalEmailsLocked,
         'actorDatabaseId': FirestoreTenant.instance.databaseId,
       });
@@ -271,6 +311,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'approvalEmailsLocked': _approvalEmailsLocked,
         'approvalEmailPrimary': approvalEmailPrimary,
         'approvalEmailSecondary': approvalEmailSecondary,
+        'approvalEmailBodyPrimary': approvalEmailBodyPrimary,
+        'approvalEmailBodySecondary': approvalEmailBodySecondary,
         'lowStockThreshold': lowStockThreshold,
         'auditLogRetentionDays': auditLogRetentionDays,
         'scheduledMaintenanceEnabled': _scheduledMaintenanceEnabled,
@@ -292,6 +334,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       _approvalEmailPrimary = approvalEmailPrimary;
       _approvalEmailSecondary = approvalEmailSecondary;
+      _approvalEmailBodyPrimary = approvalEmailBodyPrimary;
+      _approvalEmailBodySecondary = approvalEmailBodySecondary;
 
       await _auditService.logAction(
         action: 'update',
@@ -305,6 +349,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'approvalEmailsLocked': _approvalEmailsLocked,
           'approvalEmailPrimary': approvalEmailPrimary,
           'approvalEmailSecondary': approvalEmailSecondary,
+          'approvalEmailBodyPrimary': approvalEmailBodyPrimary,
+          'approvalEmailBodySecondary': approvalEmailBodySecondary,
           'lowStockThreshold': lowStockThreshold,
           'auditLogRetentionDays': auditLogRetentionDays,
           'scheduledMaintenanceEnabled': _scheduledMaintenanceEnabled,
@@ -525,6 +571,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               value,
                               'No-issue route email',
                             ),
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          TextFormField(
+                            controller: _approvalEmailBodyPrimaryController,
+                            minLines: 4,
+                            maxLines: 8,
+                            decoration: const InputDecoration(
+                              labelText: 'Email Body 1 (Approval Required)',
+                              helperText:
+                                  'Allowed placeholders: {{sorNumber}}, {{customerName}}, {{reasonText}}',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.edit_note_outlined),
+                              alignLabelWithHint: true,
+                            ),
+                            validator: (value) =>
+                                _validateEmailBody(value, 'Email body 1'),
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          TextFormField(
+                            controller: _approvalEmailBodySecondaryController,
+                            minLines: 4,
+                            maxLines: 8,
+                            decoration: const InputDecoration(
+                              labelText: 'Email Body 2 (No-Issue Route)',
+                              helperText:
+                                  'Allowed placeholders: {{sorNumber}}, {{customerName}}, {{reasonText}}',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.edit_note_outlined),
+                              alignLabelWithHint: true,
+                            ),
+                            validator: (value) =>
+                                _validateEmailBody(value, 'Email body 2'),
                           ),
                           const SizedBox(height: AppStyles.spacingS),
                           SwitchListTile(

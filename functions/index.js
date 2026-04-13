@@ -21,6 +21,13 @@ const CALLABLE_REGION = "asia-southeast1";
 const MAX_AUTO_EMAIL_RETRIES = 3;
 const DEFAULT_APPROVAL_EMAIL_PRIMARY = "";
 const DEFAULT_APPROVAL_EMAIL_SECONDARY = "";
+const DEFAULT_APPROVAL_EMAIL_BODY_PRIMARY =
+  "Sales requisition {{sorNumber}} for {{customerName}} requires review.\n" +
+  "Detected notices: {{reasonText}}.\n" +
+  "Please review the attached invoice PDF.";
+const DEFAULT_APPROVAL_EMAIL_BODY_SECONDARY =
+  "Sales requisition {{sorNumber}} for {{customerName}} was submitted without notices.\n" +
+  "Please see attached invoice PDF for reference.";
 const LEGACY_PLACEHOLDER_APPROVAL_EMAIL_PRIMARY = "approval@example.com";
 const LEGACY_PLACEHOLDER_APPROVAL_EMAIL_SECONDARY = "operations@example.com";
 let yamlFallbackLoaded = false;
@@ -44,6 +51,52 @@ function sanitizeApprovalEmailSetting(value) {
   }
 
   return normalized;
+}
+
+/**
+ * Normalizes a stored body template.
+ * @param {any} value Raw body template.
+ * @param {string} fallback Fallback template.
+ * @return {string} Normalized body template.
+ */
+function sanitizeBodyTemplateSetting(value, fallback) {
+  const normalized = (value || "").toString().trim();
+  return normalized || fallback;
+}
+
+/**
+ * Escapes basic HTML entities for safe email template insertion.
+ * @param {string} text Raw text.
+ * @return {string} Escaped text.
+ */
+function escapeHtml(text) {
+  return (text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+}
+
+/**
+ * Applies placeholders to a body template and converts new lines to <br>.
+ * @param {string} template Editable template from settings.
+ * @param {{sorNumber: string, customerName: string, reasonText: string}} context Placeholder context.
+ * @return {string} Rendered safe HTML.
+ */
+function renderBodyTemplateAsHtml(template, context) {
+  const replacements = {
+    "{{sorNumber}}": context.sorNumber,
+    "{{customerName}}": context.customerName,
+    "{{reasonText}}": context.reasonText,
+  };
+
+  let rendered = template || "";
+  for (const [token, value] of Object.entries(replacements)) {
+    rendered = rendered.split(token).join(value || "");
+  }
+
+  return escapeHtml(rendered).replace(/\r?\n/g, "<br>");
 }
 
 /**
@@ -643,13 +696,15 @@ function parseImportNumber(value, fallback = 0) {
 /**
  * Reads tenant auto-email settings with sensible defaults.
  * @param {FirebaseFirestore.Firestore} tenantDb Tenant Firestore client.
- * @return {Promise<{autoEmailEnabled: boolean, approvalEmailPrimary: string, approvalEmailSecondary: string, approvalEmailsLocked: boolean}>}
+ * @return {Promise<{autoEmailEnabled: boolean, approvalEmailPrimary: string, approvalEmailSecondary: string, approvalEmailBodyPrimary: string, approvalEmailBodySecondary: string, approvalEmailsLocked: boolean}>}
  */
 async function getAutoEmailSettings(tenantDb) {
   const defaults = {
     autoEmailEnabled: false,
     approvalEmailPrimary: DEFAULT_APPROVAL_EMAIL_PRIMARY,
     approvalEmailSecondary: DEFAULT_APPROVAL_EMAIL_SECONDARY,
+    approvalEmailBodyPrimary: DEFAULT_APPROVAL_EMAIL_BODY_PRIMARY,
+    approvalEmailBodySecondary: DEFAULT_APPROVAL_EMAIL_BODY_SECONDARY,
     approvalEmailsLocked: false,
   };
 
@@ -662,11 +717,21 @@ async function getAutoEmailSettings(tenantDb) {
     const data = settingsDoc.data() || {};
     const approvalEmailPrimary = sanitizeApprovalEmailSetting(data.approvalEmailPrimary);
     const approvalEmailSecondary = sanitizeApprovalEmailSetting(data.approvalEmailSecondary);
+    const approvalEmailBodyPrimary = sanitizeBodyTemplateSetting(
+        data.approvalEmailBodyPrimary,
+        defaults.approvalEmailBodyPrimary,
+    );
+    const approvalEmailBodySecondary = sanitizeBodyTemplateSetting(
+        data.approvalEmailBodySecondary,
+        defaults.approvalEmailBodySecondary,
+    );
 
     return {
       autoEmailEnabled: data.autoEmailEnabled === true,
       approvalEmailPrimary: approvalEmailPrimary,
       approvalEmailSecondary: approvalEmailSecondary,
+      approvalEmailBodyPrimary: approvalEmailBodyPrimary,
+      approvalEmailBodySecondary: approvalEmailBodySecondary,
       approvalEmailsLocked: data.approvalEmailsLocked === true,
     };
   } catch (error) {
@@ -705,24 +770,41 @@ function buildAutoRouteEmailTemplate(params) {
   const customerName = (params.customerName || "N/A").toString();
   const reasons = Array.isArray(params.reasons) ? params.reasons : [];
   const reasonText = reasons.length ? reasons.join(", ") : "none";
+  const bodyPrimary = sanitizeBodyTemplateSetting(
+      params.approvalEmailBodyPrimary,
+      DEFAULT_APPROVAL_EMAIL_BODY_PRIMARY,
+  );
+  const bodySecondary = sanitizeBodyTemplateSetting(
+      params.approvalEmailBodySecondary,
+      DEFAULT_APPROVAL_EMAIL_BODY_SECONDARY,
+  );
 
   if (route === "approval_required") {
+    const bodyHtml = renderBodyTemplateAsHtml(bodyPrimary, {
+      sorNumber: sorNumber,
+      customerName: customerName,
+      reasonText: reasonText,
+    });
+
     return {
       subject: `[Approval Required] Sales Requisition ${sorNumber}`,
       html: `
-        <p>This is a placeholder approval email template.</p>
-        <p>Sales requisition <strong>${sorNumber}</strong> for <strong>${customerName}</strong> requires review.</p>
-        <p>Detected notices: <strong>${reasonText}</strong>.</p>
+        <p>${bodyHtml}</p>
         <p>Please review the attached invoice PDF.</p>
       `,
     };
   }
 
+  const bodyHtml = renderBodyTemplateAsHtml(bodySecondary, {
+    sorNumber: sorNumber,
+    customerName: customerName,
+    reasonText: reasonText,
+  });
+
   return {
     subject: `[No Issues] Sales Requisition ${sorNumber}`,
     html: `
-      <p>This is a placeholder no-issues email template.</p>
-      <p>Sales requisition <strong>${sorNumber}</strong> for <strong>${customerName}</strong> was submitted without notices.</p>
+      <p>${bodyHtml}</p>
       <p>Please see attached invoice PDF for reference.</p>
     `,
   };
@@ -1860,6 +1942,8 @@ exports.sendAutoRoutedRequisitionEmail = onCall(
         sorNumber: requisitionData.sorNumber,
         customerName: requisitionData.customerName,
         reasons: routeResult.reasons,
+        approvalEmailBodyPrimary: settings.approvalEmailBodyPrimary,
+        approvalEmailBodySecondary: settings.approvalEmailBodySecondary,
       });
 
       const transporter = nodemailer.createTransport({
@@ -2040,6 +2124,12 @@ exports.updateAutoEmailSettings = onCall(
           .toString()
           .trim()
           .toLowerCase();
+        const approvalEmailBodyPrimary = ((request.data && request.data.approvalEmailBodyPrimary) || "")
+          .toString()
+          .trim();
+        const approvalEmailBodySecondary = ((request.data && request.data.approvalEmailBodySecondary) || "")
+          .toString()
+          .trim();
       const autoEmailEnabled = request.data && request.data.autoEmailEnabled === true;
       const approvalEmailsLocked = request.data && request.data.approvalEmailsLocked === true;
 
@@ -2059,6 +2149,13 @@ exports.updateAutoEmailSettings = onCall(
 
       if (!isValidEmailAddress(approvalEmailSecondary)) {
         throw new HttpsError("invalid-argument", "approvalEmailSecondary must be a valid email.");
+      }
+
+      if (!approvalEmailBodyPrimary || !approvalEmailBodySecondary) {
+        throw new HttpsError(
+            "invalid-argument",
+            "approvalEmailBodyPrimary and approvalEmailBodySecondary are required.",
+        );
       }
 
       const settingsRef = tenantDb.collection("settings").doc("appSettings");
@@ -2084,6 +2181,8 @@ exports.updateAutoEmailSettings = onCall(
         autoEmailEnabled: autoEmailEnabled,
         approvalEmailPrimary: approvalEmailPrimary,
         approvalEmailSecondary: approvalEmailSecondary,
+        approvalEmailBodyPrimary: approvalEmailBodyPrimary,
+        approvalEmailBodySecondary: approvalEmailBodySecondary,
         approvalEmailsLocked: approvalEmailsLocked,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: callerUid,
@@ -2097,6 +2196,8 @@ exports.updateAutoEmailSettings = onCall(
           autoEmailEnabled: autoEmailEnabled,
           approvalEmailPrimary: approvalEmailPrimary,
           approvalEmailSecondary: approvalEmailSecondary,
+          approvalEmailBodyPrimary: approvalEmailBodyPrimary,
+          approvalEmailBodySecondary: approvalEmailBodySecondary,
           approvalEmailsLocked: approvalEmailsLocked,
           recipientChanged: recipientChanged,
           previouslyLocked: wasLocked,
@@ -2111,6 +2212,8 @@ exports.updateAutoEmailSettings = onCall(
         autoEmailEnabled: autoEmailEnabled,
         approvalEmailPrimary: approvalEmailPrimary,
         approvalEmailSecondary: approvalEmailSecondary,
+        approvalEmailBodyPrimary: approvalEmailBodyPrimary,
+        approvalEmailBodySecondary: approvalEmailBodySecondary,
         approvalEmailsLocked: approvalEmailsLocked,
       };
     },
