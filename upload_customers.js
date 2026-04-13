@@ -53,6 +53,69 @@ const dataRows3 = rows3.slice(2); // skip first 2 rows (0: master, 1: column nam
 const headers4 = rows4[1];
 const dataRows4 = rows4.slice(2); // skip first 2 rows (0: master, 1: column names)
 
+function normalizeImportKey(value) {
+  return (value ?? '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function readImportValue(row, preferredKeys) {
+  if (!row || typeof row !== 'object') {
+    return undefined;
+  }
+
+  for (const key of preferredKeys) {
+    if (
+      Object.prototype.hasOwnProperty.call(row, key) &&
+      row[key] !== undefined &&
+      row[key] !== null &&
+      row[key] !== ''
+    ) {
+      return row[key];
+    }
+  }
+
+  const entries = Object.entries(row);
+  for (const key of preferredKeys) {
+    const normalizedKey = normalizeImportKey(key);
+    const match = entries.find(([rowKey, rowValue]) => {
+      return (
+        normalizeImportKey(rowKey) === normalizedKey &&
+        rowValue !== undefined &&
+        rowValue !== null &&
+        rowValue !== ''
+      );
+    });
+
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+}
+
+function parseImportNumber(value, fallback = 0) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[\s,]+/g, '').trim();
+    if (!normalized) {
+      return fallback;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // customers
 // Convert array of arrays to array of objects using headers
 const data = dataRows.map((row) => {
@@ -178,7 +241,9 @@ const data4 = dataRows4.map((row4) => {
     const productGroup = row4.productGroup || row4['Product Group'] || '';
     const itemCode = row4.itemCode || row4['Item Code'] || '';
     const description = row4.description || row4.Description || row4['Description'];
-    const quantity = parseFloat(row4.quantity || row4.Quantity || row4['NET QTY AVAILABLE FOR SALE'] || 0);
+    const quantity = parseImportNumber(
+      readImportValue(row4, ['quantity', 'Quantity', 'NET QTY AVAILABLE FOR SALE']),
+    );
 
     if (!date) return;
 

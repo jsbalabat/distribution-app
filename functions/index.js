@@ -372,6 +372,91 @@ function parseWorkbookData(workbook) {
 }
 
 /**
+ * Normalizes an import header or lookup key for flexible matching.
+ * @param {unknown} value Key value from the workbook row.
+ * @return {string} Normalized key string.
+ */
+function normalizeImportKey(value) {
+  const normalizedValue = value === undefined || value === null ? "" : value;
+  return normalizedValue
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+}
+
+/**
+ * Reads the first non-empty matching value from a workbook row.
+ * @param {object} row Parsed workbook row.
+ * @param {string[]} preferredKeys Candidate keys to match.
+ * @return {unknown} Matched cell value.
+ */
+function readImportValue(row, preferredKeys) {
+  if (!row || typeof row !== "object") {
+    return undefined;
+  }
+
+  for (const key of preferredKeys) {
+    if (
+      Object.prototype.hasOwnProperty.call(row, key) &&
+      row[key] !== undefined &&
+      row[key] !== null &&
+      row[key] !== ""
+    ) {
+      return row[key];
+    }
+  }
+
+  const entries = Object.entries(row);
+  for (const key of preferredKeys) {
+    const normalizedKey = normalizeImportKey(key);
+    const match = entries.find(([rowKey, rowValue]) => {
+      return (
+        normalizeImportKey(rowKey) === normalizedKey &&
+        rowValue !== undefined &&
+        rowValue !== null &&
+        rowValue !== ""
+      );
+    });
+
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Parses workbook cell content into a number.
+ * @param {unknown} value Cell value from Excel.
+ * @param {number} fallback Value to use when parsing fails.
+ * @return {number} Parsed numeric value.
+ */
+function parseImportNumber(value, fallback = 0) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.replace(/[\s,]+/g, "").trim();
+    if (!normalized) {
+      return fallback;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
  * Writes parsed import rows into Firestore in batched chunks.
  * @param {{data: object[], data2: object[], data3: object[], data4: object[]}} parsed Parsed workbook rows.
  * @param {FirebaseFirestore.Firestore} firestoreDb Firestore client.
@@ -492,7 +577,9 @@ async function importParsedWorkbookData(parsed, firestoreDb = db) {
     const productGroup = row4.productGroup || row4["Product Group"] || "";
     const itemCode = row4.itemCode || row4["Item Code"] || "";
     const description = row4.description || row4.Description || row4["Description"];
-    const quantity = parseFloat(row4.quantity || row4.Quantity || row4["NET QTY AVAILABLE FOR SALE"] || 0);
+    const quantity = parseImportNumber(
+        readImportValue(row4, ["quantity", "Quantity", "NET QTY AVAILABLE FOR SALE"]),
+    );
 
     await addDoc("itemsAvailable", {
       date: date.toString().trim(),
