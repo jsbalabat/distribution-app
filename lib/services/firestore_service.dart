@@ -19,7 +19,7 @@ class FirestoreService {
   FirebaseFirestore get _firestore => _tenant.firestore;
 
   // Save a new SOR form
-  Future<void> submitSOR(Map<String, dynamic> formData) async {
+  Future<String> submitSOR(Map<String, dynamic> formData) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
@@ -74,6 +74,8 @@ class FirestoreService {
         entityId: docRef.id,
         details: {'sorNumber': sorNumber, 'submittedBy': uid},
       );
+
+      return docRef.id;
     } on FirebaseException catch (e, st) {
       AppLogger.error(
         'Failed to submit sales requisition',
@@ -186,7 +188,6 @@ class FirestoreService {
     return _firestore
         .collection('salesRequisitions')
         .where('userID', isEqualTo: uid)
-        .orderBy('timeStamp', descending: true)
         .limit(limit)
         .snapshots();
   }
@@ -202,7 +203,6 @@ class FirestoreService {
     Query<Map<String, dynamic>> query = _firestore
         .collection('salesRequisitions')
         .where('userID', isEqualTo: uid)
-        .orderBy('timeStamp', descending: true)
         .limit(limit);
 
     if (startAfter != null) {

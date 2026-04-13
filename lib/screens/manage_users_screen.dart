@@ -159,9 +159,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     if (!mounted) return;
     final currentUser = context.read<UserProvider>().currentUser;
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'adminCreateUserInTenant',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('adminCreateUserInTenant');
       await callable.call(<String, dynamic>{
         'name': name,
         'email': email,
@@ -328,9 +328,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     }
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'adminUpdateUserInTenant',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('adminUpdateUserInTenant');
       await callable.call(<String, dynamic>{
         'targetUid': user.uid,
         'name': name,
@@ -412,9 +412,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     if (confirmed != true) return;
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'adminDeleteUserInTenant',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('adminDeleteUserInTenant');
       await callable.call(<String, dynamic>{
         'targetUid': user.uid,
         'actorCompanyIdentifier': currentUser?.companyId,
@@ -465,9 +465,9 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     final nextDisabledValue = !user.isDisabled;
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'adminUpdateUserInTenant',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('adminUpdateUserInTenant');
       await callable.call(<String, dynamic>{
         'targetUid': user.uid,
         'name': user.name,

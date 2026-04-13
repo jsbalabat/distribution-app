@@ -232,9 +232,9 @@ class _PdfEmailSectionState extends State<PdfEmailSection> {
           'SOR_${widget.sorNumber}_${DateTime.now().millisecondsSinceEpoch}.pdf';
 
       // Call Firebase Cloud Function
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'sendSalesRequisitionEmail',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('sendSalesRequisitionEmail');
 
       final result = await callable.call({
         'to': _emailController.text.trim(),

@@ -156,9 +156,9 @@ class _CompanyTenantsScreenState extends State<CompanyTenantsScreen> {
     }
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'upsertCompanyTenant',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('upsertCompanyTenant');
       await callable.call(<String, dynamic>{
         'companyIdentifier': identifier,
         'companyName': companyName,
@@ -206,9 +206,9 @@ class _CompanyTenantsScreenState extends State<CompanyTenantsScreen> {
     final user = context.read<UserProvider>().currentUser;
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'upsertCompanyTenant',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('upsertCompanyTenant');
       await callable.call(<String, dynamic>{
         'companyIdentifier': doc.id,
         'companyName': (data['companyName'] ?? '').toString(),

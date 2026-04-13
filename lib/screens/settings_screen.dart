@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/services.dart';
 import '../services/audit_service.dart';
 import '../services/firestore_tenant.dart';
@@ -25,6 +26,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoApproveOrders = false;
   bool _lowStockAlerts = true;
   bool _emailNotifications = true;
+  bool _autoEmailEnabled = false;
+  bool _approvalEmailsLocked = false;
   int _lowStockThreshold = 10;
   int _auditLogRetentionDays = 180;
   bool _scheduledMaintenanceEnabled = true;
@@ -34,10 +37,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _companyName = '';
   String _companyEmail = '';
   String _companyPhone = '';
+  String _approvalEmailPrimary = '';
+  String _approvalEmailSecondary = '';
 
   final _companyNameController = TextEditingController();
   final _companyEmailController = TextEditingController();
   final _companyPhoneController = TextEditingController();
+  final _approvalEmailPrimaryController = TextEditingController();
+  final _approvalEmailSecondaryController = TextEditingController();
   final _lowStockController = TextEditingController();
   final _auditLogRetentionController = TextEditingController();
   final _scheduledCleanupHourController = TextEditingController();
@@ -55,6 +62,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _companyNameController.dispose();
     _companyEmailController.dispose();
     _companyPhoneController.dispose();
+    _approvalEmailPrimaryController.dispose();
+    _approvalEmailSecondaryController.dispose();
     _lowStockController.dispose();
     _auditLogRetentionController.dispose();
     _scheduledCleanupHourController.dispose();
@@ -107,6 +116,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return null;
   }
 
+  String? _validateRecipientEmail(String? value, String label) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return '$label is required.';
+    final normalized = text.toLowerCase();
+    if (normalized == 'approval@example.com' ||
+        normalized == 'operations@example.com') {
+      return 'Replace placeholder email with a real recipient address.';
+    }
+    if (!text.contains('@') || !text.contains('.')) {
+      return 'Enter a valid email address.';
+    }
+    return null;
+  }
+
   String? _validatePhone(String? value) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) return 'Company phone is required.';
@@ -146,6 +169,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _autoApproveOrders = data['autoApproveOrders'] ?? false;
           _lowStockAlerts = data['lowStockAlerts'] ?? true;
           _emailNotifications = data['emailNotifications'] ?? true;
+          _autoEmailEnabled = data['autoEmailEnabled'] ?? false;
+          _approvalEmailsLocked = data['approvalEmailsLocked'] ?? false;
           _lowStockThreshold = data['lowStockThreshold'] ?? 10;
           _auditLogRetentionDays = data['auditLogRetentionDays'] ?? 180;
           _scheduledMaintenanceEnabled =
@@ -156,10 +181,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _companyName = data['companyName'] ?? '';
           _companyEmail = data['companyEmail'] ?? '';
           _companyPhone = data['companyPhone'] ?? '';
+          _approvalEmailPrimary = (data['approvalEmailPrimary'] ?? '')
+              .toString()
+              .trim();
+          _approvalEmailSecondary = (data['approvalEmailSecondary'] ?? '')
+              .toString()
+              .trim();
 
           _companyNameController.text = _companyName;
           _companyEmailController.text = _companyEmail;
           _companyPhoneController.text = _companyPhone;
+          _approvalEmailPrimaryController.text = _approvalEmailPrimary;
+          _approvalEmailSecondaryController.text = _approvalEmailSecondary;
           _lowStockController.text = _lowStockThreshold.toString();
           _auditLogRetentionController.text = _auditLogRetentionDays.toString();
           _scheduledCleanupHourController.text = _scheduledCleanupHour
@@ -172,6 +205,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       } else {
         setState(() {
+          _approvalEmailPrimaryController.text = _approvalEmailPrimary;
+          _approvalEmailSecondaryController.text = _approvalEmailSecondary;
           _auditLogRetentionController.text = _auditLogRetentionDays.toString();
           _scheduledCleanupHourController.text = _scheduledCleanupHour
               .toString();
@@ -211,12 +246,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final maintenanceRetentionDays = _parseMaintenanceRetentionDays(
       _maintenanceRetentionController.text,
     );
+    final approvalEmailPrimary = _approvalEmailPrimaryController.text.trim();
+    final approvalEmailSecondary = _approvalEmailSecondaryController.text
+        .trim();
+
+    final autoEmailCallable = FirebaseFunctions.instanceFor(
+      region: 'asia-southeast1',
+    ).httpsCallable('updateAutoEmailSettings');
 
     try {
+      await autoEmailCallable.call(<String, dynamic>{
+        'autoEmailEnabled': _autoEmailEnabled,
+        'approvalEmailPrimary': approvalEmailPrimary,
+        'approvalEmailSecondary': approvalEmailSecondary,
+        'approvalEmailsLocked': _approvalEmailsLocked,
+        'actorDatabaseId': FirestoreTenant.instance.databaseId,
+      });
+
       await _firestore.collection('settings').doc('appSettings').set({
         'autoApproveOrders': _autoApproveOrders,
         'lowStockAlerts': _lowStockAlerts,
         'emailNotifications': _emailNotifications,
+        'autoEmailEnabled': _autoEmailEnabled,
+        'approvalEmailsLocked': _approvalEmailsLocked,
+        'approvalEmailPrimary': approvalEmailPrimary,
+        'approvalEmailSecondary': approvalEmailSecondary,
         'lowStockThreshold': lowStockThreshold,
         'auditLogRetentionDays': auditLogRetentionDays,
         'scheduledMaintenanceEnabled': _scheduledMaintenanceEnabled,
@@ -227,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'companyEmail': _companyEmailController.text,
         'companyPhone': _companyPhoneController.text,
         'lastUpdated': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
 
       _auditLogRetentionController.text = auditLogRetentionDays.toString();
       _scheduledCleanupHourController.text = scheduledCleanupHour.toString();
@@ -235,6 +289,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           .toString();
       _maintenanceRetentionController.text = maintenanceRetentionDays
           .toString();
+
+      _approvalEmailPrimary = approvalEmailPrimary;
+      _approvalEmailSecondary = approvalEmailSecondary;
 
       await _auditService.logAction(
         action: 'update',
@@ -244,6 +301,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'autoApproveOrders': _autoApproveOrders,
           'lowStockAlerts': _lowStockAlerts,
           'emailNotifications': _emailNotifications,
+          'autoEmailEnabled': _autoEmailEnabled,
+          'approvalEmailsLocked': _approvalEmailsLocked,
+          'approvalEmailPrimary': approvalEmailPrimary,
+          'approvalEmailSecondary': approvalEmailSecondary,
           'lowStockThreshold': lowStockThreshold,
           'auditLogRetentionDays': auditLogRetentionDays,
           'scheduledMaintenanceEnabled': _scheduledMaintenanceEnabled,
@@ -292,8 +353,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width >=
-      AdminDesktopShell.desktopBreakpoint;
+    final isDesktop =
+        MediaQuery.of(context).size.width >=
+        AdminDesktopShell.desktopBreakpoint;
     final body = _isLoading
         ? const Center(child: CircularProgressIndicator())
         : Form(
@@ -396,6 +458,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           secondary: const Icon(Icons.mail_outline),
                         ),
                       ],
+                    ),
+                  ),
+
+                  const SizedBox(height: AppStyles.spacingXL),
+
+                  // Requisition Auto Email Section
+                  Text(
+                    'Requisition Auto Email Routing',
+                    style: AppStyles.headingStyle,
+                  ),
+                  const SizedBox(height: AppStyles.spacingM),
+                  Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        AppStyles.borderRadiusMedium,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppStyles.spacingM),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Enable Auto Email Routing'),
+                            subtitle: const Text(
+                              'Automatically route submitted requisitions by remark notices',
+                            ),
+                            value: _autoEmailEnabled,
+                            onChanged: (value) {
+                              setState(() {
+                                _autoEmailEnabled = value;
+                              });
+                            },
+                            secondary: const Icon(Icons.alt_route_outlined),
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          TextFormField(
+                            controller: _approvalEmailPrimaryController,
+                            enabled: !_approvalEmailsLocked,
+                            decoration: const InputDecoration(
+                              labelText: 'Email 1 (Approval Required Route)',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(
+                                Icons.mark_email_unread_outlined,
+                              ),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                            validator: (value) => _validateRecipientEmail(
+                              value,
+                              'Approval route email',
+                            ),
+                          ),
+                          const SizedBox(height: AppStyles.spacingM),
+                          TextFormField(
+                            controller: _approvalEmailSecondaryController,
+                            enabled: !_approvalEmailsLocked,
+                            decoration: const InputDecoration(
+                              labelText: 'Email 2 (No-Issue Route)',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.mark_email_read_outlined),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                            validator: (value) => _validateRecipientEmail(
+                              value,
+                              'No-issue route email',
+                            ),
+                          ),
+                          const SizedBox(height: AppStyles.spacingS),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Lock Recipient Emails'),
+                            subtitle: const Text(
+                              'When enabled, recipient fields are read-only until unlocked',
+                            ),
+                            value: _approvalEmailsLocked,
+                            onChanged: (value) {
+                              setState(() {
+                                _approvalEmailsLocked = value;
+                              });
+                            },
+                            secondary: const Icon(Icons.lock_outline),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 

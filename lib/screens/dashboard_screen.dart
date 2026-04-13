@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../styles/app_styles.dart';
 import '../services/firestore_service.dart';
 import '../services/firestore_tenant.dart';
+import '../providers/user_provider.dart';
 import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
 import 'edit_requisition_screen.dart';
@@ -196,9 +200,102 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return 'Something went wrong loading your dashboard.';
   }
 
+  String _autoEmailStatusLabel(String status) {
+    switch (status) {
+      case 'sent':
+        return 'Sent';
+      case 'failed':
+        return 'Failed';
+      case 'skipped':
+        return 'Skipped';
+      case 'pending':
+        return 'Pending';
+      default:
+        return 'Not Sent';
+    }
+  }
+
+  Color _autoEmailStatusColor(String status) {
+    switch (status) {
+      case 'sent':
+        return AppStyles.successColor;
+      case 'failed':
+        return AppStyles.errorColor;
+      case 'skipped':
+        return Colors.orange;
+      case 'pending':
+        return Colors.blueGrey;
+      default:
+        return AppStyles.errorColor;
+    }
+  }
+
+  String? _autoEmailStatusReason(String status, String? lastError) {
+    if (status == 'sent') {
+      return null;
+    }
+
+    if (status == 'failed' && (lastError ?? '').trim().isNotEmpty) {
+      return lastError;
+    }
+
+    if (status == 'skipped') {
+      return 'Auto-email is disabled in settings or was skipped by policy.';
+    }
+
+    if (status == 'pending') {
+      return 'Email dispatch is waiting for processing.';
+    }
+
+    return 'Email has not been sent yet.';
+  }
+
+  Future<void> _retryAutoEmail({
+    required String requisitionId,
+    required Map<String, dynamic> requisitionData,
+    required String? actorCompanyId,
+  }) async {
+    try {
+      final pdfBytes = await generateSalesPDF(requisitionData);
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('sendAutoRoutedRequisitionEmail');
+      await callable.call(<String, dynamic>{
+        'requisitionId': requisitionId,
+        'pdfData': base64Encode(pdfBytes),
+        'fileName':
+            'SOR-${requisitionData['sorNumber'] ?? requisitionId}-retry.pdf',
+        'manualRetry': true,
+        'actorCompanyIdentifier': actorCompanyId,
+        'actorDatabaseId': FirestoreTenant.instance.databaseId,
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Retry email sent successfully.'),
+          backgroundColor: AppStyles.successColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Retry email failed: $error'),
+          backgroundColor: AppStyles.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final userProvider = context.watch<UserProvider>();
+    final isAdmin = userProvider.isAdmin;
+    final actorCompanyId = userProvider.currentUser?.companyId;
     final currencyFormat = NumberFormat.currency(
       locale: 'en_PH',
       symbol: '₱',
@@ -371,6 +468,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       .whereType<Map>()
                       .map((item) => Map<String, dynamic>.from(item))
                       .toList();
+              final autoEmailStatus = (data['autoEmailStatus'] ?? 'not_sent')
+                  .toString();
+              final autoEmailStatusLabel = _autoEmailStatusLabel(
+                autoEmailStatus,
+              );
+              final autoEmailStatusColor = _autoEmailStatusColor(
+                autoEmailStatus,
+              );
+              final autoEmailStatusReason = _autoEmailStatusReason(
+                autoEmailStatus,
+                (data['autoEmailLastError'] ?? '').toString(),
+              );
+              final autoEmailSent = autoEmailStatus == 'sent';
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -607,6 +717,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             MainAxisAlignment.spaceBetween,
                                         children: [
                                           const Text(
+                                            'Email Status:',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: autoEmailStatusColor
+                                                  .withValues(alpha: 0.14),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              autoEmailStatusLabel,
+                                              style: TextStyle(
+                                                color: autoEmailStatusColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (autoEmailStatusReason != null) ...[
+                                        const SizedBox(height: 6),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            autoEmailStatusReason,
+                                            style: const TextStyle(
+                                              color:
+                                                  AppStyles.textSecondaryColor,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
                                             'Total Amount:',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
@@ -681,8 +837,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               horizontal: 20,
                               vertical: 16,
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 12,
+                              runSpacing: 8,
                               children: [
                                 _buildActionButton(
                                   icon: Icons.picture_as_pdf,
@@ -722,6 +880,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   onPressed: () =>
                                       _confirmDelete(context, doc.id),
                                 ),
+                                if (isAdmin && !autoEmailSent)
+                                  _buildActionButton(
+                                    icon: Icons.refresh_outlined,
+                                    label: 'Retry Email',
+                                    color: Colors.deepOrange,
+                                    onPressed: () => _retryAutoEmail(
+                                      requisitionId: doc.id,
+                                      requisitionData: data,
+                                      actorCompanyId: actorCompanyId,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),

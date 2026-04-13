@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 // import 'dart:math';
 import '../services/firestore_service.dart';
 import '../services/firestore_tenant.dart';
@@ -17,6 +19,7 @@ import '../widgets/confirmation_dialog.dart';
 // import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
+import 'generate_sales_pdf.dart';
 
 class FormStepData {
   final String title;
@@ -68,6 +71,44 @@ class _FormScreenState extends State<FormScreen> {
 
   // ignore: unused_field
   Item? _selectedItem;
+
+  Future<void> _sendAutoRoutedEmailWithRetries({
+    required String requisitionId,
+    required Map<String, dynamic> requisitionData,
+  }) async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'asia-southeast1',
+    ).httpsCallable('sendAutoRoutedRequisitionEmail');
+    final pdfBytes = await generateSalesPDF(requisitionData);
+    final pdfBase64 = base64Encode(pdfBytes);
+
+    Object? lastError;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await callable.call(<String, dynamic>{
+          'requisitionId': requisitionId,
+          'pdfData': pdfBase64,
+          'fileName':
+              'SOR-${requisitionData['sorNumber'] ?? requisitionId}.pdf',
+          'actorDatabaseId': FirestoreTenant.instance.databaseId,
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Requisition submitted, but auto-email failed after 3 attempts: $lastError',
+        ),
+        backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   Map<String, String> _customerIdMap = {};
   List<Map<String, dynamic>> _customers = [];
@@ -558,8 +599,9 @@ class _FormScreenState extends State<FormScreen> {
         'attachedFileName': _selectedFileName,
       };
 
+      String requisitionId;
       try {
-        await FirestoreService().submitSOR(formData);
+        requisitionId = await FirestoreService().submitSOR(formData);
       } catch (e) {
         if (!mounted) return;
         handleError(
@@ -571,6 +613,22 @@ class _FormScreenState extends State<FormScreen> {
           _isSubmitting = false;
         });
         return;
+      }
+
+      try {
+        await _sendAutoRoutedEmailWithRetries(
+          requisitionId: requisitionId,
+          requisitionData: formData,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Auto-email process encountered an error: $e'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
 
       try {

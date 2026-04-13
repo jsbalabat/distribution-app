@@ -1,18 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'dart:convert';
 import '../services/firestore_service.dart';
+import '../services/firestore_tenant.dart';
+import 'generate_sales_pdf.dart';
 
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({super.key});
+
+  Future<void> _sendAutoRoutedEmailWithRetries({
+    required String requisitionId,
+    required Map<String, dynamic> requisitionData,
+  }) async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'asia-southeast1',
+    ).httpsCallable('sendAutoRoutedRequisitionEmail');
+    final pdfBytes = await generateSalesPDF(requisitionData);
+    final pdfBase64 = base64Encode(pdfBytes);
+
+    Object? lastError;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await callable.call(<String, dynamic>{
+          'requisitionId': requisitionId,
+          'pdfData': pdfBase64,
+          'fileName':
+              'SOR-${requisitionData['sorNumber'] ?? requisitionId}.pdf',
+          'actorDatabaseId': FirestoreTenant.instance.databaseId,
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw Exception('Auto-email failed after 3 attempts: $lastError');
+  }
 
   Future<void> _submitData(
     BuildContext context,
     Map<String, dynamic> formData,
   ) async {
     try {
-      await FirestoreService().submitSOR(formData);
+      final requisitionId = await FirestoreService().submitSOR(formData);
+      await _sendAutoRoutedEmailWithRetries(
+        requisitionId: requisitionId,
+        requisitionData: formData,
+      );
       if (!context.mounted) return;
       Navigator.pushReplacementNamed(context, '/confirmation');
     } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));

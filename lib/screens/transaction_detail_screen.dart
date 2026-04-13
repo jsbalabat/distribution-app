@@ -92,6 +92,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       final pageVisibleDocs = snapshot.docs
           .where(_isVisibleSubmission)
           .toList();
+      pageVisibleDocs.sort((a, b) {
+        final aTs = RequisitionFields.timestamp(a.data());
+        final bTs = RequisitionFields.timestamp(b.data());
+        final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
+        final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
+        return bMillis.compareTo(aMillis);
+      });
       visibleDocs.addAll(pageVisibleDocs);
       cursor = snapshot.docs.last;
       hasMore = snapshot.docs.length == TransactionDetailScreen._pageSize;

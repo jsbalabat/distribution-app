@@ -7,6 +7,7 @@ const {Storage} = require("@google-cloud/storage");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
+const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const nodemailer = require("nodemailer");
@@ -16,6 +17,148 @@ const db = getFirestore();
 const storage = new Storage();
 
 const DEFAULT_DATABASE_ID = "(default)";
+const CALLABLE_REGION = "asia-southeast1";
+const MAX_AUTO_EMAIL_RETRIES = 3;
+const DEFAULT_APPROVAL_EMAIL_PRIMARY = "";
+const DEFAULT_APPROVAL_EMAIL_SECONDARY = "";
+const LEGACY_PLACEHOLDER_APPROVAL_EMAIL_PRIMARY = "approval@example.com";
+const LEGACY_PLACEHOLDER_APPROVAL_EMAIL_SECONDARY = "operations@example.com";
+let yamlFallbackLoaded = false;
+
+/**
+ * Normalizes email settings and strips legacy placeholders.
+ * @param {any} value Raw email field value.
+ * @return {string} Normalized email or empty when placeholder/invalid input.
+ */
+function sanitizeApprovalEmailSetting(value) {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  if (
+    normalized === LEGACY_PLACEHOLDER_APPROVAL_EMAIL_PRIMARY ||
+    normalized === LEGACY_PLACEHOLDER_APPROVAL_EMAIL_SECONDARY
+  ) {
+    return "";
+  }
+
+  return normalized;
+}
+
+/**
+ * Returns first non-empty string from values.
+ * @param {Array<any>} values Candidate values.
+ * @return {string} First non-empty trimmed value.
+ */
+function pickFirstNonEmpty(values) {
+  for (const value of values) {
+    const text = (value || "").toString().trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+/**
+ * Loads .env.yaml keys into process.env as a local fallback.
+ */
+function loadYamlCredentialFallback() {
+  if (yamlFallbackLoaded) {
+    return;
+  }
+  yamlFallbackLoaded = true;
+
+  try {
+    const envYamlPath = path.join(__dirname, ".env.yaml");
+    if (!fs.existsSync(envYamlPath)) {
+      return;
+    }
+
+    const content = fs.readFileSync(envYamlPath, "utf8");
+    const lines = content.split(/\r?\n/);
+    const loadedKeys = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) {
+        continue;
+      }
+
+      const match = line.match(/^([A-Z0-9_]+)\s*:\s*(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const key = match[1];
+      const valueRaw = (match[2] || "").trim();
+      const value = valueRaw.replace(/^['"]|['"]$/g, "");
+
+      if (!process.env[key] && value) {
+        process.env[key] = value;
+        loadedKeys.push(key);
+      }
+    }
+
+    if (loadedKeys.length > 0) {
+      console.log(`[EMAIL] Loaded fallback env keys from .env.yaml: ${loadedKeys.join(",")}`);
+    }
+  } catch (error) {
+    console.warn("[EMAIL] Failed to parse .env.yaml fallback", error);
+  }
+}
+
+/**
+ * Resolves email credentials from secrets first, then env fallbacks.
+ * @return {{gmailEmail: string, gmailPassword: string, source: string}} Resolved credentials and source.
+ */
+function getConfiguredEmailCredentials() {
+  loadYamlCredentialFallback();
+
+  const envEmail = pickFirstNonEmpty([
+    process.env.GMAIL_EMAIL,
+    process.env.GMAIL_USER,
+    process.env.EMAIL_USER,
+    process.env.SMTP_USER,
+  ]);
+  const envPassword = pickFirstNonEmpty([
+    process.env.GMAIL_PASSWORD,
+    process.env.GMAIL_PASS,
+    process.env.EMAIL_PASSWORD,
+    process.env.SMTP_PASS,
+  ]);
+
+  const gmailEmail = pickFirstNonEmpty([envEmail]);
+  const gmailPassword = pickFirstNonEmpty([envPassword]);
+  const source = "env";
+
+  return {gmailEmail, gmailPassword, source};
+}
+
+/**
+ * Logs failed-precondition checkpoints with correlation id.
+ * @param {string} scope Logical operation scope.
+ * @param {string} reason Failure reason.
+ * @param {object} meta Non-sensitive metadata for debugging.
+ * @return {string} Checkpoint id.
+ */
+function logPreconditionCheckpoint(scope, reason, meta = {}) {
+  const checkpointId = `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  console.error(
+      `[CHECKPOINT][PRECONDITION] scope=${scope} checkpoint=${checkpointId} reason=${reason} meta=${JSON.stringify(meta)}`,
+  );
+  return checkpointId;
+}
+
+/**
+ * Throws failed-precondition with checkpoint id in the message.
+ * @param {string} scope Logical operation scope.
+ * @param {string} reason Failure reason.
+ * @param {object} meta Non-sensitive metadata for debugging.
+ */
+function throwFailedPreconditionWithCheckpoint(scope, reason, meta = {}) {
+  const checkpointId = logPreconditionCheckpoint(scope, reason, meta);
+  throw new HttpsError("failed-precondition", `${reason} [checkpoint:${checkpointId}]`);
+}
 
 /**
  * Returns a Firestore client for a target database id.
@@ -498,6 +641,148 @@ function parseImportNumber(value, fallback = 0) {
 }
 
 /**
+ * Reads tenant auto-email settings with sensible defaults.
+ * @param {FirebaseFirestore.Firestore} tenantDb Tenant Firestore client.
+ * @return {Promise<{autoEmailEnabled: boolean, approvalEmailPrimary: string, approvalEmailSecondary: string, approvalEmailsLocked: boolean}>}
+ */
+async function getAutoEmailSettings(tenantDb) {
+  const defaults = {
+    autoEmailEnabled: false,
+    approvalEmailPrimary: DEFAULT_APPROVAL_EMAIL_PRIMARY,
+    approvalEmailSecondary: DEFAULT_APPROVAL_EMAIL_SECONDARY,
+    approvalEmailsLocked: false,
+  };
+
+  try {
+    const settingsDoc = await tenantDb.collection("settings").doc("appSettings").get();
+    if (!settingsDoc.exists) {
+      return defaults;
+    }
+
+    const data = settingsDoc.data() || {};
+    const approvalEmailPrimary = sanitizeApprovalEmailSetting(data.approvalEmailPrimary);
+    const approvalEmailSecondary = sanitizeApprovalEmailSetting(data.approvalEmailSecondary);
+
+    return {
+      autoEmailEnabled: data.autoEmailEnabled === true,
+      approvalEmailPrimary: approvalEmailPrimary,
+      approvalEmailSecondary: approvalEmailSecondary,
+      approvalEmailsLocked: data.approvalEmailsLocked === true,
+    };
+  } catch (error) {
+    console.error("Failed to load auto-email settings, using defaults", error);
+    return defaults;
+  }
+}
+
+/**
+ * Determines approval routing based on requisition remarks.
+ * @param {object} requisitionData Requisition document data.
+ * @return {{route: string, reasons: string[]}}
+ */
+function evaluateApprovalRoute(requisitionData) {
+  const reasons = [];
+  const remark1 = ((requisitionData && requisitionData.remark1) || "").toString().trim();
+  const remark2 = ((requisitionData && requisitionData.remark2) || "").toString().trim();
+
+  if (remark1) reasons.push("remark1");
+  if (remark2) reasons.push("remark2");
+
+  return {
+    route: reasons.length > 0 ? "approval_required" : "auto_clear",
+    reasons: reasons,
+  };
+}
+
+/**
+ * Builds placeholder email content for auto-routing notifications.
+ * @param {object} params Template parameters.
+ * @return {{subject: string, html: string}}
+ */
+function buildAutoRouteEmailTemplate(params) {
+  const route = params.route;
+  const sorNumber = (params.sorNumber || "N/A").toString();
+  const customerName = (params.customerName || "N/A").toString();
+  const reasons = Array.isArray(params.reasons) ? params.reasons : [];
+  const reasonText = reasons.length ? reasons.join(", ") : "none";
+
+  if (route === "approval_required") {
+    return {
+      subject: `[Approval Required] Sales Requisition ${sorNumber}`,
+      html: `
+        <p>This is a placeholder approval email template.</p>
+        <p>Sales requisition <strong>${sorNumber}</strong> for <strong>${customerName}</strong> requires review.</p>
+        <p>Detected notices: <strong>${reasonText}</strong>.</p>
+        <p>Please review the attached invoice PDF.</p>
+      `,
+    };
+  }
+
+  return {
+    subject: `[No Issues] Sales Requisition ${sorNumber}`,
+    html: `
+      <p>This is a placeholder no-issues email template.</p>
+      <p>Sales requisition <strong>${sorNumber}</strong> for <strong>${customerName}</strong> was submitted without notices.</p>
+      <p>Please see attached invoice PDF for reference.</p>
+    `,
+  };
+}
+
+/**
+ * Validates email format for settings-managed recipient addresses.
+ * @param {string} email Email address.
+ * @return {boolean} Whether format is valid.
+ */
+function isValidEmailAddress(email) {
+  const normalized = (email || "").toString().trim();
+  if (!normalized) return false;
+  const emailRegex = /^[\w-.]+@([\w-]+\.)+[\w-]{2,}$/;
+  return emailRegex.test(normalized);
+}
+
+/**
+ * Finds the tenant database that contains the requisition document.
+ * @param {string} requisitionId Requisition document id.
+ * @return {Promise<{companyId: string, databaseId: string, tenantDb: FirebaseFirestore.Firestore}|null>}
+ */
+async function findTenantForRequisitionId(requisitionId) {
+  if (!requisitionId) return null;
+
+  const tenants = await getActiveTenants();
+  for (const tenant of tenants) {
+    const tenantDb = getTenantDb(tenant.databaseId);
+    const requisitionDoc = await tenantDb.collection("salesRequisitions").doc(requisitionId).get();
+    if (requisitionDoc.exists) {
+      return {
+        companyId: tenant.companyId,
+        databaseId: tenant.databaseId,
+        tenantDb: tenantDb,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Writes a routed email log entry with defensive error handling.
+ * @param {FirebaseFirestore.Firestore} tenantDb Tenant Firestore client.
+ * @param {object} payload Log payload.
+ * @return {Promise<void>}
+ */
+async function writeAutoEmailLog(tenantDb, payload) {
+  try {
+    await tenantDb.collection("emailLogs").add({
+      type: "requisition_auto_route",
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...payload,
+    });
+  } catch (error) {
+    console.error("[AUTO-EMAIL] Failed to write emailLogs record", error);
+  }
+}
+
+/**
  * Sums numeric quantities in columns named like "area 1", "area 2", etc.
  * @param {object} row Parsed workbook row.
  * @return {number} Summed area quantity.
@@ -892,6 +1177,7 @@ exports.pruneAuditLogs = onSchedule(
 
 exports.runDestructiveCleanup = onCall(
     {
+      region: CALLABLE_REGION,
       timeoutSeconds: 540,
       memory: "512MiB",
     },
@@ -986,6 +1272,7 @@ exports.runDestructiveCleanup = onCall(
 
 exports.importDataFromExcelDirect = onCall(
     {
+      region: CALLABLE_REGION,
       timeoutSeconds: 540,
       memory: "1GiB",
     },
@@ -1076,8 +1363,11 @@ exports.importDataFromExcelDirect = onCall(
 
 exports.sendSalesRequisitionEmail = onCall(
     {
+      region: CALLABLE_REGION,
       timeoutSeconds: 60,
-      memory: "256MiB",
+      memory: "128MiB",
+      cpu: "gcf_gen1",
+      maxInstances: 1,
     },
     async (request) => {
       if (!request.auth) {
@@ -1109,15 +1399,23 @@ exports.sendSalesRequisitionEmail = onCall(
       }
 
       try {
-        // Get credentials from environment variables
-        const gmailEmail = process.env.GMAIL_EMAIL;
-        const gmailPassword = process.env.GMAIL_PASSWORD;
+        const {gmailEmail, gmailPassword, source} = getConfiguredEmailCredentials();
 
         if (!gmailEmail || !gmailPassword) {
-          console.error("Gmail credentials not configured");
-          throw new HttpsError(
-              "failed-precondition",
-              "Email service is not properly configured",
+          const envYamlPath = path.join(__dirname, ".env.yaml");
+          throwFailedPreconditionWithCheckpoint(
+              "sendSalesRequisitionEmail.credentials",
+              "Email service is not properly configured. Missing GMAIL_EMAIL or GMAIL_PASSWORD.",
+              {
+                hasEmail: Boolean(gmailEmail),
+                hasPassword: Boolean(gmailPassword),
+                source: source,
+                hasEnvGmailEmail: Boolean(process.env.GMAIL_EMAIL),
+                hasEnvGmailPassword: Boolean(process.env.GMAIL_PASSWORD),
+                hasEnvGmailUser: Boolean(process.env.GMAIL_USER),
+                hasEnvSmtpUser: Boolean(process.env.SMTP_USER),
+                hasEnvYamlFile: fs.existsSync(envYamlPath),
+              },
           );
         }
 
@@ -1223,6 +1521,10 @@ exports.sendSalesRequisitionEmail = onCall(
       } catch (error) {
         console.error("Error sending email:", error);
 
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+
         // Calculate expiration date (30 days from now)
         const expirationDate = new Date();
         expirationDate.setDate(expirationDate.getDate() + 30);
@@ -1252,11 +1554,575 @@ exports.sendSalesRequisitionEmail = onCall(
 );
 
 // ========================================
+// AUTO-ROUTED REQUISITION EMAIL (remark-based)
+// ========================================
+
+exports.sendAutoRoutedRequisitionEmail = onCall(
+    {
+      region: CALLABLE_REGION,
+      timeoutSeconds: 120,
+      memory: "512MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        console.warn("[AUTO-EMAIL] Rejected unauthenticated request");
+        throw new HttpsError("unauthenticated", "User must be authenticated to send routed emails");
+      }
+
+      const callerUid = request.auth.uid;
+      let tenant = await resolveTenantForCallable(request.data, callerUid);
+      let tenantDb = getTenantDb(tenant.databaseId);
+
+      const requisitionId = ((request.data && request.data.requisitionId) || "").toString().trim();
+      const pdfData = ((request.data && request.data.pdfData) || "").toString();
+      const fileName = ((request.data && request.data.fileName) || "invoice.pdf").toString().trim();
+      const manualRetry = request.data && request.data.manualRetry === true;
+
+      console.log(
+          `[AUTO-EMAIL] Request received: requisitionId=${requisitionId || "(missing)"}, ` +
+          `manualRetry=${manualRetry}, callerUid=${callerUid}, company=${tenant.companyId}, database=${tenant.databaseId}, ` +
+          `pdfBase64Length=${pdfData.length}`,
+      );
+
+      if (!requisitionId) {
+        console.warn("[AUTO-EMAIL] Missing requisitionId in request payload");
+        throw new HttpsError("invalid-argument", "requisitionId is required.");
+      }
+
+      if (!pdfData) {
+        console.warn(`[AUTO-EMAIL] Missing pdfData for requisitionId=${requisitionId}`);
+        throw new HttpsError("invalid-argument", "pdfData is required.");
+      }
+
+      if (manualRetry) {
+        console.log(`[AUTO-EMAIL] Manual retry requested for requisitionId=${requisitionId}`);
+        const adminAllowed = await isAdminUser(callerUid, tenantDb);
+        if (!adminAllowed) {
+          console.warn(`[AUTO-EMAIL] Manual retry denied (not admin): callerUid=${callerUid}`);
+          throw new HttpsError("permission-denied", "Admin access is required for manual retry.");
+        }
+      }
+
+      let requisitionRef = tenantDb.collection("salesRequisitions").doc(requisitionId);
+      let requisitionDoc = await requisitionRef.get();
+      if (!requisitionDoc.exists) {
+        console.warn(
+            `[AUTO-EMAIL] Requisition not found in resolved tenant; trying fallback lookup. ` +
+            `requisitionId=${requisitionId}, resolvedDatabase=${tenant.databaseId}`,
+        );
+
+        const fallbackTenant = await findTenantForRequisitionId(requisitionId);
+        if (!fallbackTenant) {
+          await writeAutoEmailLog(tenantDb, {
+            requisitionId: requisitionId,
+            companyId: tenant.companyId,
+            databaseId: tenant.databaseId,
+            status: "failed",
+            error: "Requisition not found in resolved or fallback tenant databases.",
+          });
+          throw new HttpsError("not-found", "Requisition not found.");
+        }
+
+        tenant = {
+          companyId: fallbackTenant.companyId,
+          databaseId: fallbackTenant.databaseId,
+        };
+        tenantDb = fallbackTenant.tenantDb;
+        requisitionRef = tenantDb.collection("salesRequisitions").doc(requisitionId);
+        requisitionDoc = await requisitionRef.get();
+
+        console.log(
+            `[AUTO-EMAIL] Fallback tenant resolved for requisitionId=${requisitionId}: ` +
+            `company=${tenant.companyId}, database=${tenant.databaseId}`,
+        );
+      }
+
+      const requisitionData = requisitionDoc.data() || {};
+      const currentStatus = (requisitionData.autoEmailStatus || "").toString();
+      const currentAttempts = Number(requisitionData.autoEmailAttemptCount || 0);
+
+      console.log(
+          `[AUTO-EMAIL] Loaded requisition state: requisitionId=${requisitionId}, ` +
+          `currentStatus=${currentStatus || "(empty)"}, currentAttempts=${currentAttempts}`,
+      );
+
+      if (!manualRetry && currentStatus === "sent") {
+        console.log(`[AUTO-EMAIL] Skipping already-sent requisitionId=${requisitionId}`);
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: (requisitionData.approvalRoute || "").toString(),
+          reasons: requisitionData.approvalReasons || [],
+          status: "skipped",
+          error: "Skipped because requisition is already marked sent.",
+        });
+        return {
+          success: true,
+          skipped: true,
+          message: "Auto email already sent.",
+          requisitionId: requisitionId,
+        };
+      }
+
+      if (!manualRetry && currentAttempts >= MAX_AUTO_EMAIL_RETRIES) {
+        console.warn(
+            `[AUTO-EMAIL] Automatic retry limit reached for requisitionId=${requisitionId}, ` +
+            `currentAttempts=${currentAttempts}, limit=${MAX_AUTO_EMAIL_RETRIES}`,
+        );
+        await requisitionRef.set({
+          autoEmailStatus: "failed",
+          autoEmailLastError: `Automatic retry limit (${MAX_AUTO_EMAIL_RETRIES}) reached.`,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: (requisitionData.approvalRoute || "").toString(),
+          reasons: requisitionData.approvalReasons || [],
+          status: "failed",
+          error: `Automatic retry limit (${MAX_AUTO_EMAIL_RETRIES}) reached.`,
+        });
+
+        return {
+          success: false,
+          skipped: true,
+          message: "Automatic retry limit reached.",
+          requisitionId: requisitionId,
+        };
+      }
+
+      const settings = await getAutoEmailSettings(tenantDb);
+      console.log(
+          `[AUTO-EMAIL] Loaded settings for requisitionId=${requisitionId}: ` +
+          `autoEmailEnabled=${settings.autoEmailEnabled}, approvalEmailsLocked=${settings.approvalEmailsLocked}, ` +
+          `primaryConfigured=${Boolean(settings.approvalEmailPrimary)}, secondaryConfigured=${Boolean(settings.approvalEmailSecondary)}`,
+      );
+      if (!settings.autoEmailEnabled && !manualRetry) {
+        console.warn(`[AUTO-EMAIL] Auto-email disabled by settings for requisitionId=${requisitionId}`);
+        await requisitionRef.set({
+          autoEmailStatus: "skipped",
+          autoEmailLastError: "Auto-email is disabled in tenant settings.",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: (requisitionData.approvalRoute || "").toString(),
+          reasons: requisitionData.approvalReasons || [],
+          status: "skipped",
+          error: "Auto-email disabled in settings.",
+        });
+
+        return {
+          success: true,
+          skipped: true,
+          message: "Auto-email disabled in settings.",
+          requisitionId: requisitionId,
+        };
+      }
+
+      const routeResult = evaluateApprovalRoute(requisitionData);
+      const targetEmail = routeResult.route === "approval_required" ?
+        settings.approvalEmailPrimary : settings.approvalEmailSecondary;
+
+      console.log(
+          `[AUTO-EMAIL] Route evaluated for requisitionId=${requisitionId}: ` +
+          `route=${routeResult.route}, reasons=${JSON.stringify(routeResult.reasons)}, targetEmail=${targetEmail || "(missing)"}`,
+      );
+
+      if (!targetEmail) {
+        const checkpointId = logPreconditionCheckpoint(
+            "sendAutoRoutedRequisitionEmail.missingRecipient",
+            "Recipient email is not configured.",
+            {
+              requisitionId: requisitionId,
+              route: routeResult.route,
+              companyId: tenant.companyId,
+              databaseId: tenant.databaseId,
+            },
+        );
+        await requisitionRef.set({
+          approvalRoute: routeResult.route,
+          approvalReasons: routeResult.reasons,
+          autoEmailStatus: "failed",
+          autoEmailAttemptCount: currentAttempts + 1,
+          autoEmailLastError: `No recipient email configured. checkpoint=${checkpointId}`,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: routeResult.route,
+          reasons: routeResult.reasons,
+          status: "failed",
+          error: `No recipient email configured. checkpoint=${checkpointId}`,
+        });
+
+        throw new HttpsError(
+            "failed-precondition",
+            `Recipient email is not configured. [checkpoint:${checkpointId}]`,
+        );
+      }
+
+      if (!isValidEmailAddress(targetEmail)) {
+        const checkpointId = logPreconditionCheckpoint(
+            "sendAutoRoutedRequisitionEmail.invalidRecipient",
+            "Recipient email format is invalid.",
+            {
+              requisitionId: requisitionId,
+              targetEmail: targetEmail,
+              route: routeResult.route,
+              companyId: tenant.companyId,
+              databaseId: tenant.databaseId,
+            },
+        );
+        await requisitionRef.set({
+          approvalRoute: routeResult.route,
+          approvalReasons: routeResult.reasons,
+          autoEmailStatus: "failed",
+          autoEmailAttemptCount: currentAttempts + 1,
+          autoEmailLastError: `Invalid recipient email configured: ${targetEmail}. checkpoint=${checkpointId}`,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: routeResult.route,
+          reasons: routeResult.reasons,
+          to: targetEmail,
+          status: "failed",
+          error: `Invalid recipient email configured: ${targetEmail}. checkpoint=${checkpointId}`,
+        });
+
+        throw new HttpsError(
+            "failed-precondition",
+            `Recipient email format is invalid. [checkpoint:${checkpointId}]`,
+        );
+      }
+
+      const {gmailEmail, gmailPassword, source} = getConfiguredEmailCredentials();
+      if (!gmailEmail || !gmailPassword) {
+        const envYamlPath = path.join(__dirname, ".env.yaml");
+        const checkpointId = logPreconditionCheckpoint(
+            "sendAutoRoutedRequisitionEmail.credentials",
+            "Email service is not properly configured. Missing GMAIL_EMAIL or GMAIL_PASSWORD.",
+            {
+              requisitionId: requisitionId,
+              hasEmail: Boolean(gmailEmail),
+              hasPassword: Boolean(gmailPassword),
+              source: source,
+              hasEnvGmailEmail: Boolean(process.env.GMAIL_EMAIL),
+              hasEnvGmailPassword: Boolean(process.env.GMAIL_PASSWORD),
+              hasEnvGmailUser: Boolean(process.env.GMAIL_USER),
+              hasEnvSmtpUser: Boolean(process.env.SMTP_USER),
+              hasEnvYamlFile: fs.existsSync(envYamlPath),
+              companyId: tenant.companyId,
+              databaseId: tenant.databaseId,
+            },
+        );
+
+        await requisitionRef.set({
+          autoEmailStatus: "failed",
+          autoEmailAttemptCount: currentAttempts + 1,
+          autoEmailLastError:
+            `Email service is not properly configured. Missing GMAIL_EMAIL or GMAIL_PASSWORD. checkpoint=${checkpointId}`,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: routeResult.route,
+          reasons: routeResult.reasons,
+          status: "failed",
+          error:
+            `Email service is not properly configured. Missing GMAIL_EMAIL or GMAIL_PASSWORD. checkpoint=${checkpointId}`,
+        });
+
+        throw new HttpsError(
+            "failed-precondition",
+            `Email service is not properly configured. Missing GMAIL_EMAIL or GMAIL_PASSWORD. [checkpoint:${checkpointId}]`,
+        );
+      }
+
+      const template = buildAutoRouteEmailTemplate({
+        route: routeResult.route,
+        sorNumber: requisitionData.sorNumber,
+        customerName: requisitionData.customerName,
+        reasons: routeResult.reasons,
+      });
+
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: gmailEmail,
+          pass: gmailPassword,
+        },
+      });
+
+      try {
+        console.log(
+            `[AUTO-EMAIL] Sending email for requisitionId=${requisitionId}: ` +
+            `to=${targetEmail}, subject=${template.subject}, fileName=${fileName || "(auto)"}`,
+        );
+        const pdfBuffer = Buffer.from(pdfData, "base64");
+        if (!pdfBuffer.length) {
+          throw new HttpsError("invalid-argument", "PDF attachment payload is empty after decoding.");
+        }
+
+        const maxAttachmentBytes = 20 * 1024 * 1024;
+        if (pdfBuffer.length > maxAttachmentBytes) {
+          throw new HttpsError(
+              "failed-precondition",
+              `PDF attachment exceeds size limit (${pdfBuffer.length} bytes).`,
+          );
+        }
+
+        console.log(
+            `[AUTO-EMAIL] PDF decoded for requisitionId=${requisitionId}, bytes=${pdfBuffer.length}`,
+        );
+
+        await transporter.verify();
+        console.log(`[AUTO-EMAIL] SMTP verification succeeded for requisitionId=${requisitionId}`);
+
+        const info = await transporter.sendMail({
+          from: `Sales Team <${gmailEmail}>`,
+          to: targetEmail,
+          subject: template.subject,
+          html: template.html,
+          attachments: [
+            {
+              filename: fileName || `SOR-${(requisitionData.sorNumber || requisitionId)}.pdf`,
+              content: pdfBuffer,
+              contentType: "application/pdf",
+            },
+          ],
+        });
+
+        await requisitionRef.set({
+          approvalRoute: routeResult.route,
+          approvalReasons: routeResult.reasons,
+          autoEmailStatus: "sent",
+          autoEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          autoEmailAttemptCount: currentAttempts + 1,
+          autoEmailLastError: null,
+          autoEmailMessageId: info && info.messageId ? info.messageId : null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: routeResult.route,
+          reasons: routeResult.reasons,
+          to: targetEmail,
+          subject: template.subject,
+          status: "success",
+        });
+
+        console.log(
+            `[AUTO-EMAIL] Email sent successfully for requisitionId=${requisitionId}, ` +
+            `messageId=${info && info.messageId ? info.messageId : "(none)"}`,
+        );
+
+        return {
+          success: true,
+          requisitionId: requisitionId,
+          route: routeResult.route,
+          sentTo: targetEmail,
+        };
+      } catch (error) {
+        const isHttpsError = error instanceof HttpsError;
+        const errorMessage = error && error.message ? error.message : String(error);
+        const errorCode = isHttpsError ? String(error.code) : (error && error.code ? String(error.code) : "unknown");
+        const smtpResponse = error && error.response ? String(error.response) : null;
+        const smtpResponseCode =
+          error && Object.prototype.hasOwnProperty.call(error, "responseCode") ?
+            String(error.responseCode) :
+            null;
+        const smtpCommand = error && error.command ? String(error.command) : null;
+
+        await requisitionRef.set({
+          approvalRoute: routeResult.route,
+          approvalReasons: routeResult.reasons,
+          autoEmailStatus: "failed",
+          autoEmailAttemptCount: currentAttempts + 1,
+          autoEmailLastError: `${errorCode}: ${errorMessage}`,
+          autoEmailLastErrorCode: errorCode,
+          autoEmailLastSmtpResponseCode: smtpResponseCode,
+          autoEmailLastSmtpCommand: smtpCommand,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+
+        await writeAutoEmailLog(tenantDb, {
+          requisitionId: requisitionId,
+          companyId: tenant.companyId,
+          databaseId: tenant.databaseId,
+          routeChosen: routeResult.route,
+          reasons: routeResult.reasons,
+          to: targetEmail,
+          subject: template.subject,
+          status: "failed",
+          error: `${errorCode}: ${errorMessage}`,
+          errorCode: errorCode,
+          smtpResponse: smtpResponse,
+          smtpResponseCode: smtpResponseCode,
+          smtpCommand: smtpCommand,
+          errorStack: error && error.stack ? error.stack : null,
+        });
+
+        console.error(
+            `[AUTO-EMAIL] Email send failed for requisitionId=${requisitionId}: ` +
+            `code=${errorCode}, message=${errorMessage}, responseCode=${smtpResponseCode || "(none)"}, command=${smtpCommand || "(none)"}`,
+            error,
+        );
+
+        if (isHttpsError && error.code === "failed-precondition") {
+          logPreconditionCheckpoint(
+              "sendAutoRoutedRequisitionEmail.sendBlock",
+              errorMessage,
+              {
+                requisitionId: requisitionId,
+                route: routeResult.route,
+                companyId: tenant.companyId,
+                databaseId: tenant.databaseId,
+                smtpResponseCode: smtpResponseCode,
+                smtpCommand: smtpCommand,
+              },
+          );
+        }
+
+        if (isHttpsError) {
+          throw error;
+        }
+
+        throw new HttpsError("internal", `Failed to send auto-routed email: ${errorCode}: ${errorMessage}`);
+      }
+    },
+);
+
+exports.updateAutoEmailSettings = onCall(
+    {
+      region: CALLABLE_REGION,
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be signed in.");
+      }
+
+      const callerUid = request.auth.uid;
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+      const adminAllowed = await isAdminUser(callerUid, tenantDb);
+
+      if (!adminAllowed) {
+        throw new HttpsError("permission-denied", "Admin access is required.");
+      }
+
+      const approvalEmailPrimary = ((request.data && request.data.approvalEmailPrimary) || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+      const approvalEmailSecondary = ((request.data && request.data.approvalEmailSecondary) || "")
+          .toString()
+          .trim()
+          .toLowerCase();
+      const autoEmailEnabled = request.data && request.data.autoEmailEnabled === true;
+      const approvalEmailsLocked = request.data && request.data.approvalEmailsLocked === true;
+
+      if (
+        approvalEmailPrimary === LEGACY_PLACEHOLDER_APPROVAL_EMAIL_PRIMARY ||
+        approvalEmailSecondary === LEGACY_PLACEHOLDER_APPROVAL_EMAIL_SECONDARY
+      ) {
+        throw new HttpsError(
+            "failed-precondition",
+            "Replace placeholder recipient emails with real addresses before saving.",
+        );
+      }
+
+      if (!isValidEmailAddress(approvalEmailPrimary)) {
+        throw new HttpsError("invalid-argument", "approvalEmailPrimary must be a valid email.");
+      }
+
+      if (!isValidEmailAddress(approvalEmailSecondary)) {
+        throw new HttpsError("invalid-argument", "approvalEmailSecondary must be a valid email.");
+      }
+
+      const settingsRef = tenantDb.collection("settings").doc("appSettings");
+      const existingDoc = await settingsRef.get();
+      const existingData = existingDoc.data() || {};
+      const wasLocked = existingData.approvalEmailsLocked === true;
+
+      const existingPrimary = (existingData.approvalEmailPrimary || "").toString().trim();
+      const existingSecondary = (existingData.approvalEmailSecondary || "").toString().trim();
+      const recipientChanged =
+        approvalEmailPrimary !== existingPrimary ||
+        approvalEmailSecondary !== existingSecondary;
+      const staysLocked = wasLocked && approvalEmailsLocked;
+
+      if (staysLocked && recipientChanged) {
+        throw new HttpsError(
+            "failed-precondition",
+            "Recipient emails are locked. Disable lock before editing recipients.",
+        );
+      }
+
+      await settingsRef.set({
+        autoEmailEnabled: autoEmailEnabled,
+        approvalEmailPrimary: approvalEmailPrimary,
+        approvalEmailSecondary: approvalEmailSecondary,
+        approvalEmailsLocked: approvalEmailsLocked,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: callerUid,
+      }, {merge: true});
+
+      await tenantDb.collection("auditLogs").add({
+        action: "updateAutoEmailSettings",
+        entityType: "settings",
+        entityId: "appSettings",
+        details: {
+          autoEmailEnabled: autoEmailEnabled,
+          approvalEmailPrimary: approvalEmailPrimary,
+          approvalEmailSecondary: approvalEmailSecondary,
+          approvalEmailsLocked: approvalEmailsLocked,
+          recipientChanged: recipientChanged,
+          previouslyLocked: wasLocked,
+        },
+        actorUid: callerUid,
+        actorEmail: request.auth.token.email || "unknown",
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        autoEmailEnabled: autoEmailEnabled,
+        approvalEmailPrimary: approvalEmailPrimary,
+        approvalEmailSecondary: approvalEmailSecondary,
+        approvalEmailsLocked: approvalEmailsLocked,
+      };
+    },
+);
+
+// ========================================
 // COMPANY TENANT MANAGEMENT (default DB directory)
 // ========================================
 
 exports.upsertCompanyTenant = onCall(
     {
+      region: CALLABLE_REGION,
       timeoutSeconds: 60,
       memory: "256MiB",
     },
@@ -1326,8 +2192,11 @@ exports.upsertCompanyTenant = onCall(
 
 exports.adminCreateUserInTenant = onCall(
     {
+  region: CALLABLE_REGION,
       timeoutSeconds: 60,
-      memory: "256MiB",
+      memory: "128MiB",
+      cpu: "gcf_gen1",
+      maxInstances: 1,
     },
     async (request) => {
       if (!request.auth) {
@@ -1431,8 +2300,11 @@ exports.adminCreateUserInTenant = onCall(
 
 exports.adminUpdateUserInTenant = onCall(
     {
+  region: CALLABLE_REGION,
       timeoutSeconds: 60,
-      memory: "256MiB",
+      memory: "128MiB",
+      cpu: "gcf_gen1",
+      maxInstances: 1,
     },
     async (request) => {
       if (!request.auth) {
@@ -1528,8 +2400,11 @@ exports.adminUpdateUserInTenant = onCall(
 
 exports.adminDeleteUserInTenant = onCall(
     {
+  region: CALLABLE_REGION,
       timeoutSeconds: 60,
-      memory: "256MiB",
+      memory: "128MiB",
+      cpu: "gcf_gen1",
+      maxInstances: 1,
     },
     async (request) => {
       if (!request.auth) {

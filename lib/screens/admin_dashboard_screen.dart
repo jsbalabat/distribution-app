@@ -37,8 +37,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _openSection(AdminShellSection section) {
-    final isDesktop = MediaQuery.of(context).size.width >=
-      AdminDesktopShell.desktopBreakpoint;
+    final isDesktop =
+        MediaQuery.of(context).size.width >=
+        AdminDesktopShell.desktopBreakpoint;
     if (isDesktop) {
       _navigateDesktop(section);
       return;
@@ -99,9 +100,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return;
       }
 
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'importDataFromExcelDirect',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('importDataFromExcelDirect');
       await callable.call(<String, dynamic>{
         'fileName': pickedFile.name,
         'fileBase64': base64Encode(bytes),
@@ -206,9 +207,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'runDestructiveCleanup',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'asia-southeast1',
+      ).httpsCallable('runDestructiveCleanup');
       final result = await callable.call(<String, dynamic>{
         'confirmText': typedConfirmation,
         'reason': 'Triggered from admin dashboard',
@@ -289,8 +290,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
     final userName = userProvider.currentUser?.name ?? 'Admin';
-    final isDesktop = MediaQuery.of(context).size.width >=
-      AdminDesktopShell.desktopBreakpoint;
+    final isDesktop =
+        MediaQuery.of(context).size.width >=
+        AdminDesktopShell.desktopBreakpoint;
 
     final mobileBody = ListView(
       padding: const EdgeInsets.all(AppStyles.spacingM),
