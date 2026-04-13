@@ -363,7 +363,38 @@ function parseWorkbookData(workbook) {
   const data4 = dataRows4.map((row4) => {
     const obj = {};
     headers4.forEach((header, i) => {
-      if (header) obj[header.toString().trim()] = row4[i];
+      if (!header) return;
+
+      const key = header.toString().trim();
+      const incomingValue = row4[i];
+      const existingValue = obj[key];
+
+      const isExistingEmpty =
+        existingValue === undefined ||
+        existingValue === null ||
+        existingValue === "";
+      const isIncomingEmpty =
+        incomingValue === undefined ||
+        incomingValue === null ||
+        incomingValue === "";
+
+      if (isExistingEmpty) {
+        obj[key] = incomingValue;
+        return;
+      }
+
+      if (isIncomingEmpty) {
+        return;
+      }
+
+      // Duplicate header names are possible in this workbook.
+      // Preserve both values so quantity resolution can still find a non-empty cell.
+      if (Array.isArray(existingValue)) {
+        existingValue.push(incomingValue);
+        obj[key] = existingValue;
+      } else {
+        obj[key] = [existingValue, incomingValue];
+      }
     });
     return obj;
   });
@@ -438,6 +469,16 @@ function parseImportNumber(value, fallback = 0) {
     return fallback;
   }
 
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const parsed = parseImportNumber(entry, Number.NaN);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return fallback;
+  }
+
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : fallback;
   }
@@ -454,6 +495,31 @@ function parseImportNumber(value, fallback = 0) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Sums numeric quantities in columns named like "area 1", "area 2", etc.
+ * @param {object} row Parsed workbook row.
+ * @return {number} Summed area quantity.
+ */
+function sumAreaQuantities(row) {
+  if (!row || typeof row !== "object") {
+    return 0;
+  }
+
+  let total = 0;
+  for (const [key, value] of Object.entries(row)) {
+    if (!/^area\s*\d+$/i.test(normalizeImportKey(key))) {
+      continue;
+    }
+
+    const parsed = parseImportNumber(value, Number.NaN);
+    if (!Number.isNaN(parsed)) {
+      total += parsed;
+    }
+  }
+
+  return total;
 }
 
 /**
@@ -577,9 +643,19 @@ async function importParsedWorkbookData(parsed, firestoreDb = db) {
     const productGroup = row4.productGroup || row4["Product Group"] || "";
     const itemCode = row4.itemCode || row4["Item Code"] || "";
     const description = row4.description || row4.Description || row4["Description"];
-    const quantity = parseImportNumber(
-        readImportValue(row4, ["quantity", "Quantity", "NET QTY AVAILABLE FOR SALE"]),
-    );
+    const rawQuantity = readImportValue(row4, [
+      "quantity",
+      "Quantity",
+      "NET QTY AVAILABLE FOR SALE",
+      "NET QTY AVAILBALE FOR SALE",
+    ]);
+    let quantity = parseImportNumber(rawQuantity, Number.NaN);
+    if (Number.isNaN(quantity)) {
+      quantity = sumAreaQuantities(row4);
+    }
+    if (!Number.isFinite(quantity)) {
+      quantity = 0;
+    }
 
     await addDoc("itemsAvailable", {
       date: date.toString().trim(),
