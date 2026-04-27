@@ -43,6 +43,7 @@ The app supports:
 - Environment-based Firebase config using `.env`
 - Soft-delete support for requisitions so history is preserved
 - Structured import and cleanup logging through Firestore and Cloud Function logs
+- Multi-company support via tenant-specific Firestore database IDs selected at sign-in
 
 ## Tech Stack
 
@@ -62,10 +63,21 @@ The app supports:
 
 - `lib/screens/` - app screens and workflows
 - `lib/services/` - data access and shared services
-- `lib/models/` - Firestore model mappings
+  - `queue_repository.dart` - encrypted local queue storage for offline (Ticket 2)
+- `lib/models/` - Firestore model mappings and offline sync contract enums
+  - `offline_sync_contract.dart` - shared offline enums and constants (Ticket 1)
+  - `queued_sales_requisition.dart` - local queue item model (Ticket 2)
+  - `offline_sync_adapters.dart` - Hive serialization adapters (Ticket 2)
 - `lib/utils/` - helpers, logging, and field normalization
+- `lib/providers/` - state management using Provider
+- `lib/widgets/` - reusable UI components
+- `lib/styles/` - app-wide styling constants
 - `functions/` - Firebase Cloud Functions
+- `docs/` - architecture and implementation baselines
+  - `offline_architecture_baseline.md` - offline contract, states, retry/rollback policy (Ticket 1)
+  - `ticket_2_queue_storage.md` - queue storage implementation details (Ticket 2)
 - `test/` - unit and widget tests
+  - `queue_repository_test.dart` - acceptance tests for queue storage (Ticket 2)
 
 ## Getting Started
 
@@ -88,6 +100,8 @@ npm install
 Create a `.env` file at the project root and provide the Firebase web config values used by the app.
 
 An example template is available in `.env.example`.
+
+For multi-company deployments, sign in with the target company Firestore database ID in the login screen. Use `(default)` for the primary database.
 
 ### Run the App
 
@@ -167,6 +181,8 @@ Before production deployment:
 ## Documentation Status
 
 This README is the main entry point for setup and usage. For deeper project analysis, see `COMPREHENSIVE_README.md`.
+
+Offline-first design baseline for Ticket 1 is documented in `docs/offline_architecture_baseline.md`.
 
 ## License
 

@@ -117,11 +117,17 @@
 - Soft-delete workflow for requisitions to preserve history
 - Audit logs screen supports filtered CSV copy export
 
-### 12. **Recent Stability Improvements (April 2026)**
+### 12. **Planned Stability Improvements (April 2026)**
 - Direct upload flow hardened for web and Android file providers
 - Upload logging added in UI and Cloud Functions (`[IMPORT][UI]`, `[IMPORT][DIRECT]`)
 - Notifications query path adjusted to avoid composite-index runtime failures
 - Focused unit/widget test coverage added for core model and utility behavior
+
+### 13. **Multi-Company Firestore Support**
+- The app can target separate Firestore databases per company
+- Users select the company database ID during sign-in
+- The selected database ID is persisted locally for subsequent launches
+- App data, notifications, logs, and settings are resolved from the active tenant database
 
 ---
 
