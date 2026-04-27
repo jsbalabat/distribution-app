@@ -1,8 +1,11 @@
 // lib/providers/user_provider.dart
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_tenant.dart';
+import '../services/offline_sync_worker.dart';
 import '../utils/app_logger.dart';
 
 class UserProvider with ChangeNotifier {
@@ -27,6 +30,23 @@ class UserProvider with ChangeNotifier {
     _initUser();
   }
 
+  void _scheduleSync() {
+    unawaited(
+      Future<void>(() async {
+        try {
+          await OfflineSyncWorker.instance.syncPendingQueue();
+        } catch (e, st) {
+          AppLogger.error(
+            'Background offline sync trigger failed',
+            error: e,
+            stackTrace: st,
+            tag: 'PROVIDER',
+          );
+        }
+      }),
+    );
+  }
+
   Future<void> _initUser() async {
     _isLoading = true;
     notifyListeners();
@@ -37,11 +57,18 @@ class UserProvider with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
 
+    if (_currentUser != null) {
+      _scheduleSync();
+    }
+
     // Listen to auth changes
     _authService.userStream.listen(
       (user) {
         _currentUser = user;
         notifyListeners();
+        if (user != null) {
+          _scheduleSync();
+        }
       },
       onError: (error, stackTrace) {
         AppLogger.error(
@@ -77,6 +104,9 @@ class UserProvider with ChangeNotifier {
       );
       _isLoading = false;
       notifyListeners();
+      if (_currentUser != null) {
+        _scheduleSync();
+      }
       AppLogger.info(
         'Provider signIn succeeded (isLoggedIn=${_currentUser != null})',
         tag: 'PROVIDER',

@@ -6,6 +6,7 @@ import 'dart:math' show Random;
 import '../models/queued_sales_requisition.dart';
 import '../models/offline_sync_contract.dart';
 import '../models/offline_sync_adapters.dart';
+import 'offline_queue_repository.dart';
 
 /// Manages local encrypted storage of queued Sales Requisitions.
 ///
@@ -18,7 +19,7 @@ import '../models/offline_sync_adapters.dart';
 /// 3. Track retry state (auto and manual)
 /// 4. Enforce retention policies (1-day history)
 /// 5. Maintain audit log of queue operations
-class QueueRepository {
+class QueueRepository implements OfflineQueueRepository {
   static const String _boxName = 'offline_sor_queue';
   static const String _auditBoxName = 'offline_queue_audit';
   static const String _encryptionKeyName = 'offline_queue_encryption_key';
