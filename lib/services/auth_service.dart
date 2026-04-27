@@ -280,6 +280,83 @@ class AuthService {
     await _auth.signOut();
   }
 
+  Future<bool> hasFreshCachedSession({
+    Duration refreshSkew = const Duration(minutes: 5),
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return false;
+    }
+
+    try {
+      final tokenResult = await user.getIdTokenResult(false);
+      final expirationTime = tokenResult.expirationTime;
+      if (expirationTime == null) {
+        return false;
+      }
+
+      final safeExpiry = expirationTime.subtract(refreshSkew);
+      final isFresh = DateTime.now().isBefore(safeExpiry);
+      AppLogger.info(
+        'Cached auth session freshness checked: $isFresh',
+        tag: 'AUTH',
+      );
+      return isFresh;
+    } on FirebaseAuthException catch (e, st) {
+      AppLogger.warning(
+        'Unable to inspect cached auth session freshness (${e.code})',
+        tag: 'AUTH',
+      );
+      AppLogger.error(
+        'Session freshness inspection failed',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      return false;
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected error while checking cached auth session freshness',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> refreshSessionIfPossible() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return false;
+    }
+
+    try {
+      await user.getIdToken(true);
+      return true;
+    } on FirebaseAuthException catch (e, st) {
+      AppLogger.warning(
+        'Token refresh failed during submission gate (${e.code})',
+        tag: 'AUTH',
+      );
+      AppLogger.error(
+        'Session refresh failed',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      return false;
+    } catch (e, st) {
+      AppLogger.error(
+        'Unexpected error while refreshing auth session',
+        error: e,
+        stackTrace: st,
+        tag: 'AUTH',
+      );
+      return false;
+    }
+  }
+
   // Stream of user changes with role information
   Stream<UserModel?> get userStream {
     return _auth.authStateChanges().asyncMap((User? user) async {

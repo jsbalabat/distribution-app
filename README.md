@@ -64,6 +64,7 @@ The app supports:
 - `lib/screens/` - app screens and workflows
 - `lib/services/` - data access and shared services
   - `queue_repository.dart` - encrypted local queue storage for offline (Ticket 2)
+  - `offline_submission_service.dart` - auth/connectivity gate and routing (Ticket 3)
 - `lib/models/` - Firestore model mappings and offline sync contract enums
   - `offline_sync_contract.dart` - shared offline enums and constants (Ticket 1)
   - `queued_sales_requisition.dart` - local queue item model (Ticket 2)
@@ -76,6 +77,7 @@ The app supports:
 - `docs/` - architecture and implementation baselines
   - `offline_architecture_baseline.md` - offline contract, states, retry/rollback policy (Ticket 1)
   - `ticket_2_queue_storage.md` - queue storage implementation details (Ticket 2)
+  - `ticket_3_auth_gate.md` - auth/connectivity gate and submission routing (Ticket 3)
 - `test/` - unit and widget tests
   - `queue_repository_test.dart` - acceptance tests for queue storage (Ticket 2)
 

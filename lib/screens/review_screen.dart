@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
-import '../services/firestore_service.dart';
+import '../services/offline_submission_service.dart';
 import '../services/firestore_tenant.dart';
 import 'generate_sales_pdf.dart';
 
@@ -42,9 +42,28 @@ class ReviewScreen extends StatelessWidget {
     Map<String, dynamic> formData,
   ) async {
     try {
-      final requisitionId = await FirestoreService().submitSOR(formData);
+      final submissionResult = await OfflineSubmissionService.instance
+          .submitOrQueue(formData);
+
+      if (submissionResult.wasQueued) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              submissionResult.requiresRelogin
+                  ? 'Saved offline. Sign in again before it can sync.'
+                  : 'Saved offline. It will sync when connectivity returns.',
+            ),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pushReplacementNamed(context, '/confirmation');
+        return;
+      }
+
       await _sendAutoRoutedEmailWithRetries(
-        requisitionId: requisitionId,
+        requisitionId: submissionResult.requisitionId,
         requisitionData: formData,
       );
       if (!context.mounted) return;

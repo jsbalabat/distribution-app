@@ -15,6 +15,14 @@ class UserProvider with ChangeNotifier {
   bool get isLoggedIn => _currentUser != null;
   bool get isAdmin => _currentUser?.isAdmin ?? false;
 
+  Future<bool> canSyncCurrentSession() {
+    return _authService.hasFreshCachedSession();
+  }
+
+  Future<bool> refreshSessionIfPossible() {
+    return _authService.refreshSessionIfPossible();
+  }
+
   UserProvider() {
     _initUser();
   }

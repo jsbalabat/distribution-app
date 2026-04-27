@@ -1,12 +1,10 @@
-// ignore_for_file: avoid_web_libraries_in_flutter
-
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class FirestoreTenantStorage {
   static const String _storageKey = 'selected_firestore_database_id';
 
   Future<String?> readDatabaseId() async {
-    final value = html.window.localStorage[_storageKey]?.trim();
+    final value = web.window.localStorage.getItem(_storageKey)?.trim();
     if (value == null || value.isEmpty) {
       return null;
     }
@@ -16,14 +14,14 @@ class FirestoreTenantStorage {
   Future<void> writeDatabaseId(String? databaseId) async {
     final value = databaseId?.trim() ?? '';
     if (value.isEmpty) {
-      html.window.localStorage.remove(_storageKey);
+      web.window.localStorage.removeItem(_storageKey);
       return;
     }
 
-    html.window.localStorage[_storageKey] = value;
+    web.window.localStorage.setItem(_storageKey, value);
   }
 
   Future<void> clearDatabaseId() async {
-    html.window.localStorage.remove(_storageKey);
+    web.window.localStorage.removeItem(_storageKey);
   }
 }

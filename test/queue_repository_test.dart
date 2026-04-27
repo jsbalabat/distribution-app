@@ -1,18 +1,43 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../lib/services/queue_repository.dart';
-import '../lib/models/queued_sales_requisition.dart';
-import '../lib/models/offline_sync_contract.dart';
+import 'package:new_test_store/services/queue_repository.dart';
+import 'package:new_test_store/models/queued_sales_requisition.dart';
+import 'package:new_test_store/models/offline_sync_contract.dart';
 
 void main() {
   group('QueueRepository - Secure Local Queue Storage', () {
+    const pathProviderChannel = MethodChannel(
+      'plugins.flutter.io/path_provider',
+    );
     late QueueRepository repository;
     late MockSecureStorage mockSecureStorage;
 
     setUpAll(() async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+
+      final testDir = await Directory.systemTemp.createTemp('queue_repo_test');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, (call) async {
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return testDir.path;
+            }
+            if (call.method == 'getTemporaryDirectory') {
+              return testDir.path;
+            }
+            return testDir.path;
+          });
+
       // Initialize Hive for testing (in-memory)
       Hive.init('test_hive');
+    });
+
+    tearDownAll(() async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, null);
     });
 
     setUp(() {
@@ -129,10 +154,15 @@ void main() {
       sor = repository.getSalesRequisition(clientId);
       expect(sor!.manualRetryCount, 2);
 
-      // Act: Third retry succeeds
-      existing.lastManualRetryTimestamp = DateTime.now();
-      await repository.updateStatus(clientId, newStatus: existing.status);
-      await Future.delayed(const Duration(seconds: 1));
+      // Act: Third retry succeeds after another full cooldown window
+      final afterSecondRetry = repository.getSalesRequisition(clientId)!;
+      afterSecondRetry.lastManualRetryTimestamp = DateTime.now().subtract(
+        const Duration(seconds: 31),
+      );
+      await repository.updateStatus(
+        clientId,
+        newStatus: afterSecondRetry.status,
+      );
       await repository.incrementManualRetry(clientId);
       sor = repository.getSalesRequisition(clientId);
       expect(sor!.manualRetryCount, 3);
@@ -267,11 +297,8 @@ void main() {
       );
 
       // Manually add to queue (simulating old item)
-      final box = await Hive.openBox<QueuedSalesRequisition>(
-        'offline_sor_queue',
-      );
+      final box = Hive.box<QueuedSalesRequisition>('offline_sor_queue');
       await box.put(oldClientId, oldSor);
-      await box.close();
 
       // Create recent SOR (should not be deleted)
       await _createTestSOR(repository, 'recent-sor-001');
@@ -346,6 +373,9 @@ class MockSecureStorage extends FlutterSecureStorage {
     required String key,
     IOSOptions? iOptions,
     AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
     WebOptions? webOptions,
   }) async {
     return _storage[key];
@@ -354,11 +384,18 @@ class MockSecureStorage extends FlutterSecureStorage {
   @override
   Future<void> write({
     required String key,
-    required String value,
+    required String? value,
     IOSOptions? iOptions,
     AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
     WebOptions? webOptions,
   }) async {
+    if (value == null) {
+      _storage.remove(key);
+      return;
+    }
     _storage[key] = value;
   }
 
@@ -367,6 +404,9 @@ class MockSecureStorage extends FlutterSecureStorage {
     required String key,
     IOSOptions? iOptions,
     AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
     WebOptions? webOptions,
   }) async {
     _storage.remove(key);
@@ -376,6 +416,9 @@ class MockSecureStorage extends FlutterSecureStorage {
   Future<Map<String, String>> readAll({
     IOSOptions? iOptions,
     AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
     WebOptions? webOptions,
   }) async {
     return Map.from(_storage);

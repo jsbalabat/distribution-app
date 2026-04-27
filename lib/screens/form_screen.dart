@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 // import 'dart:math';
 import '../services/firestore_service.dart';
+import '../services/offline_submission_service.dart';
 import '../services/firestore_tenant.dart';
 import '../models/item_model.dart';
 import '../widgets/customer_section.dart';
@@ -599,9 +600,10 @@ class _FormScreenState extends State<FormScreen> {
         'attachedFileName': _selectedFileName,
       };
 
-      String requisitionId;
+      late final OfflineSubmissionResult submissionResult;
       try {
-        requisitionId = await FirestoreService().submitSOR(formData);
+        submissionResult = await OfflineSubmissionService.instance
+            .submitOrQueue(formData);
       } catch (e) {
         if (!mounted) return;
         handleError(
@@ -615,9 +617,37 @@ class _FormScreenState extends State<FormScreen> {
         return;
       }
 
+      if (submissionResult.wasQueued) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              submissionResult.requiresRelogin
+                  ? 'Saved offline. Sign in again before it can sync.'
+                  : 'Saved offline. It will sync when connectivity returns.',
+            ),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() {
+          _isSubmitting = false;
+        });
+        safeSetState(() {
+          _selectedCustomer = null;
+          _selectedItems = [];
+          _remark1 = '';
+          _remark2 = '';
+          _sorNumber = '';
+          _invoiceDate = null;
+          _dispatchDate = null;
+        });
+        return;
+      }
+
       try {
         await _sendAutoRoutedEmailWithRetries(
-          requisitionId: requisitionId,
+          requisitionId: submissionResult.requisitionId,
           requisitionData: formData,
         );
       } catch (e) {

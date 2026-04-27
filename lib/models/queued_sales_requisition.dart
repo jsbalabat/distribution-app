@@ -141,20 +141,19 @@ class QueuedSalesRequisition {
 
   /// Increments manual retry count (user-triggered, capped at 3)
   void incrementManualRetryCount() {
-    if (manualRetryCount < OfflineSyncContractConstants.manualRetryLimit) {
+    if (manualRetryCount < manualRetryLimit) {
       manualRetryCount++;
     }
   }
 
   /// Checks if manual retry is available (not at limit, not on cooldown)
   bool canManualRetry(DateTime now) {
-    if (manualRetryCount >= OfflineSyncContractConstants.manualRetryLimit) {
+    if (manualRetryCount >= manualRetryLimit) {
       return false;
     }
     if (lastManualRetryTimestamp != null) {
       final cooldownElapsed = now.difference(lastManualRetryTimestamp!);
-      if (cooldownElapsed.inSeconds <
-          OfflineSyncContractConstants.manualRetryCooldown.inSeconds) {
+      if (cooldownElapsed.inSeconds < manualRetryCooldown.inSeconds) {
         return false;
       }
     }

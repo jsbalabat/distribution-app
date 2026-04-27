@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:math' show Random;
 import '../models/queued_sales_requisition.dart';
 import '../models/offline_sync_contract.dart';
@@ -23,7 +22,6 @@ class QueueRepository {
   static const String _boxName = 'offline_sor_queue';
   static const String _auditBoxName = 'offline_queue_audit';
   static const String _encryptionKeyName = 'offline_queue_encryption_key';
-  static const String _secureStorageService = 'offline_queue_storage';
   static const Duration _queueRetentionDuration = Duration(days: 1);
 
   late final Box<QueuedSalesRequisition> _queueBox;
@@ -41,6 +39,9 @@ class QueueRepository {
 
     try {
       // Register adapters for custom types
+      if (!Hive.isAdapterRegistered(0)) {
+        Hive.registerAdapter(QueuedSalesRequisitionAdapter());
+      }
       if (!Hive.isAdapterRegistered(1)) {
         Hive.registerAdapter(OfflineSorStatusAdapter());
       }
@@ -150,7 +151,7 @@ class QueueRepository {
       'clientGeneratedId': clientGeneratedId,
       'previousStatus': existing.status.label,
       'newStatus': newStatus.label,
-      'errorCategory': errorCategory?.name,
+      'errorCategory': errorCategory?.name ?? 'none',
     });
   }
 
@@ -303,7 +304,7 @@ class QueueRepository {
     final keysToDelete = <String>[];
 
     for (final entry in _queueBox.toMap().entries) {
-      final sor = entry.value as QueuedSalesRequisition;
+      final sor = entry.value;
       // Delete if created before cutoff AND (final state reached OR cancelled)
       final finalStates = [
         OfflineSorStatus.syncedAccepted,
@@ -313,7 +314,7 @@ class QueueRepository {
 
       if (sor.createdTimestamp.isBefore(cutoff) &&
           finalStates.contains(sor.status)) {
-        keysToDelete.add(entry.key as String);
+        keysToDelete.add(entry.key);
       }
     }
 
@@ -393,8 +394,7 @@ class QueueRepository {
   /// iOS-specific secure storage options
   IOSOptions _getIOSOptions() {
     return const IOSOptions(
-      accessibility:
-          KeychainAccessibility.first_available_when_unlocked_this_device_only,
+      accessibility: KeychainAccessibility.first_unlock_this_device,
     );
   }
 
