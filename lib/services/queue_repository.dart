@@ -35,6 +35,7 @@ class QueueRepository implements OfflineQueueRepository {
 
   /// Initializes Hive, loads or generates encryption key, and opens boxes.
   /// Must be called once during app startup before any queue operations.
+  @override
   Future<void> initialize() async {
     if (_initialized) return;
 
@@ -111,12 +112,14 @@ class QueueRepository implements OfflineQueueRepository {
   }
 
   /// Retrieves a queued SOR by clientGeneratedId
+  @override
   QueuedSalesRequisition? getSalesRequisition(String clientGeneratedId) {
     _ensureInitialized();
     return _queueBox.get(clientGeneratedId);
   }
 
   /// Updates status and related fields for a queued SOR
+  @override
   Future<void> updateStatus(
     String clientGeneratedId, {
     required OfflineSorStatus newStatus,
@@ -157,6 +160,7 @@ class QueueRepository implements OfflineQueueRepository {
   }
 
   /// Increments auto retry count for a queued SOR
+  @override
   Future<void> incrementAutoRetry(String clientGeneratedId) async {
     _ensureInitialized();
 
@@ -199,6 +203,7 @@ class QueueRepository implements OfflineQueueRepository {
   }
 
   /// Marks a SOR as accepted and eligible for rollback (24-hour window)
+  @override
   Future<void> markSyncAccepted(String clientGeneratedId) async {
     _ensureInitialized();
 
@@ -262,6 +267,7 @@ class QueueRepository implements OfflineQueueRepository {
   }
 
   /// Gets all SORs pending sync (not yet successfully synced)
+  @override
   List<QueuedSalesRequisition> getPendingSync() {
     _ensureInitialized();
 
@@ -298,6 +304,7 @@ class QueueRepository implements OfflineQueueRepository {
   }
 
   /// Clears old queue items based on retention policy (1-day history)
+  @override
   Future<int> clearExpiredItems() async {
     _ensureInitialized();
 
