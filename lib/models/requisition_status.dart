@@ -1,4 +1,5 @@
 import '../utils/requisition_fields.dart';
+import 'offline_sync_contract.dart';
 
 /// Visual severity bucket for an invoice status; the badge widget maps this to a tint.
 enum RequisitionStatusSeverity { success, warning, danger, info, neutral }
@@ -12,6 +13,13 @@ enum RequisitionStatusKind {
   cleared,
   emailOff,
   notSent,
+  // Local offline-queue states — the submission lives only on this device until
+  // the sync worker uploads it to the server.
+  queuedOffline,
+  uploading,
+  needsRelogin,
+  syncRejected,
+  uploadFailed,
 }
 
 /// One status that collapses a requisition's three real status dimensions
@@ -97,5 +105,75 @@ class RequisitionStatus {
       detail: 'No email has been dispatched for this requisition yet.',
       severity: RequisitionStatusSeverity.neutral,
     );
+  }
+
+  /// Maps an offline-queue lifecycle state onto the same status vocabulary, so a
+  /// not-yet-synced submission reads on the dashboard like any other invoice.
+  factory RequisitionStatus.fromOfflineStatus(
+    OfflineSorStatus status, {
+    String? lastError,
+  }) {
+    final error = lastError?.trim() ?? '';
+    switch (status) {
+      case OfflineSorStatus.draftOffline:
+      case OfflineSorStatus.pendingSync:
+        return const RequisitionStatus(
+          kind: RequisitionStatusKind.queuedOffline,
+          label: 'Pending upload',
+          detail:
+              'Saved on this device — it uploads automatically once you are back online.',
+          severity: RequisitionStatusSeverity.info,
+        );
+      case OfflineSorStatus.syncing:
+        return const RequisitionStatus(
+          kind: RequisitionStatusKind.uploading,
+          label: 'Uploading…',
+          detail: 'Uploading this submission to the server now.',
+          severity: RequisitionStatusSeverity.info,
+        );
+      case OfflineSorStatus.requiresRelogin:
+        return const RequisitionStatus(
+          kind: RequisitionStatusKind.needsRelogin,
+          label: 'Sign in to upload',
+          detail:
+              'Your session expired before this uploaded. Sign in again to finish.',
+          severity: RequisitionStatusSeverity.warning,
+        );
+      case OfflineSorStatus.rejectedValidation:
+      case OfflineSorStatus.rejectedInventory:
+        return RequisitionStatus(
+          kind: RequisitionStatusKind.syncRejected,
+          label: 'Rejected',
+          detail: error.isNotEmpty
+              ? error
+              : 'The server rejected this submission. Review and resubmit.',
+          severity: RequisitionStatusSeverity.danger,
+        );
+      case OfflineSorStatus.failedRequiresUserAction:
+        return RequisitionStatus(
+          kind: RequisitionStatusKind.uploadFailed,
+          label: 'Upload failed',
+          detail: error.isNotEmpty
+              ? error
+              : 'Automatic upload attempts were used up. Retry when ready.',
+          severity: RequisitionStatusSeverity.danger,
+        );
+      // Synced/terminal states are represented by the server record itself, so
+      // the dashboard never renders them from the local queue — this is only a
+      // benign fallback if one is ever passed.
+      case OfflineSorStatus.syncedAccepted:
+      case OfflineSorStatus.emailPending:
+      case OfflineSorStatus.emailSent:
+      case OfflineSorStatus.emailFailedRetryAvailable:
+      case OfflineSorStatus.rollbackAvailable:
+      case OfflineSorStatus.rolledBack:
+      case OfflineSorStatus.cancelledByUser:
+        return const RequisitionStatus(
+          kind: RequisitionStatusKind.queuedOffline,
+          label: 'Pending upload',
+          detail: 'Saved on this device.',
+          severity: RequisitionStatusSeverity.info,
+        );
+    }
   }
 }

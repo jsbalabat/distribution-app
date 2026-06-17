@@ -77,6 +77,16 @@ class StatusBadge extends StatelessWidget {
         return Icons.radio_button_unchecked;
       case RequisitionStatusKind.archived:
         return Icons.archive_outlined;
+      case RequisitionStatusKind.queuedOffline:
+        return Icons.cloud_upload_outlined;
+      case RequisitionStatusKind.uploading:
+        return Icons.sync;
+      case RequisitionStatusKind.needsRelogin:
+        return Icons.lock_outline;
+      case RequisitionStatusKind.syncRejected:
+        return Icons.report_gmailerrorred;
+      case RequisitionStatusKind.uploadFailed:
+        return Icons.cloud_off;
     }
   }
 }

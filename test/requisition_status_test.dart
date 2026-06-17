@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:new_test_store/models/offline_sync_contract.dart';
 import 'package:new_test_store/models/requisition_status.dart';
 
 void main() {
@@ -88,6 +89,66 @@ void main() {
       });
 
       expect(status.kind, RequisitionStatusKind.awaitingApproval);
+    });
+  });
+
+  group('RequisitionStatus.fromOfflineStatus', () {
+    test('draft and pending sync both read as pending upload', () {
+      expect(
+        RequisitionStatus.fromOfflineStatus(OfflineSorStatus.draftOffline).kind,
+        RequisitionStatusKind.queuedOffline,
+      );
+      final pending = RequisitionStatus.fromOfflineStatus(
+        OfflineSorStatus.pendingSync,
+      );
+      expect(pending.kind, RequisitionStatusKind.queuedOffline);
+      expect(pending.severity, RequisitionStatusSeverity.info);
+    });
+
+    test('syncing reads as uploading', () {
+      expect(
+        RequisitionStatus.fromOfflineStatus(OfflineSorStatus.syncing).kind,
+        RequisitionStatusKind.uploading,
+      );
+    });
+
+    test('requires relogin warns the user to sign in', () {
+      final status = RequisitionStatus.fromOfflineStatus(
+        OfflineSorStatus.requiresRelogin,
+      );
+
+      expect(status.kind, RequisitionStatusKind.needsRelogin);
+      expect(status.severity, RequisitionStatusSeverity.warning);
+    });
+
+    test('rejection surfaces the server reason when present', () {
+      final status = RequisitionStatus.fromOfflineStatus(
+        OfflineSorStatus.rejectedInventory,
+        lastError: '  Insufficient stock for item 4  ',
+      );
+
+      expect(status.kind, RequisitionStatusKind.syncRejected);
+      expect(status.severity, RequisitionStatusSeverity.danger);
+      expect(status.detail, 'Insufficient stock for item 4');
+    });
+
+    test('failed upload falls back to a generic detail without an error', () {
+      final status = RequisitionStatus.fromOfflineStatus(
+        OfflineSorStatus.failedRequiresUserAction,
+      );
+
+      expect(status.kind, RequisitionStatusKind.uploadFailed);
+      expect(status.severity, RequisitionStatusSeverity.danger);
+      expect(status.detail, isNotEmpty);
+    });
+
+    test('synced states are not surfaced from the queue', () {
+      expect(
+        RequisitionStatus.fromOfflineStatus(
+          OfflineSorStatus.syncedAccepted,
+        ).kind,
+        RequisitionStatusKind.queuedOffline,
+      );
     });
   });
 }
