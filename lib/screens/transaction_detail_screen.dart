@@ -5,6 +5,8 @@ import 'package:printing/printing.dart';
 import '../services/firestore_service.dart';
 import '../styles/app_styles.dart';
 import '../utils/requisition_fields.dart';
+import '../models/requisition_status.dart';
+import '../widgets/status_badge.dart';
 
 Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
   final pdf = pw.Document();
@@ -376,6 +378,14 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                                   ),
                                   DataColumn(
                                     label: Text(
+                                      'Status',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
                                       'Customer',
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
@@ -509,6 +519,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           DataRow(
             cells: [
               DataCell(Text(RequisitionFields.sorNumber(data))),
+              DataCell(
+                StatusBadge(
+                  status: RequisitionStatus.fromRequisition(data),
+                  dense: true,
+                ),
+              ),
               DataCell(Text(data['customerName'] ?? '')),
               DataCell(Text(data['accountNumber'] ?? '')),
               DataCell(Text(item['name'] ?? '')),

@@ -12,6 +12,9 @@ import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
 import 'edit_requisition_screen.dart';
 import 'notifications_screen.dart';
+import '../models/requisition_status.dart';
+import '../widgets/status_badge.dart';
+import '../utils/requisition_fields.dart';
 import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -198,56 +201,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return 'Dashboard data is not indexed for this tenant. The page is now using a safer query path.';
     }
     return 'Something went wrong loading your dashboard.';
-  }
-
-  String _autoEmailStatusLabel(String status) {
-    switch (status) {
-      case 'sent':
-        return 'Sent';
-      case 'failed':
-        return 'Failed';
-      case 'skipped':
-        return 'Skipped';
-      case 'pending':
-        return 'Pending';
-      default:
-        return 'Not Sent';
-    }
-  }
-
-  Color _autoEmailStatusColor(String status) {
-    switch (status) {
-      case 'sent':
-        return AppStyles.successColor;
-      case 'failed':
-        return AppStyles.errorColor;
-      case 'skipped':
-        return Colors.orange;
-      case 'pending':
-        return Colors.blueGrey;
-      default:
-        return AppStyles.errorColor;
-    }
-  }
-
-  String? _autoEmailStatusReason(String status, String? lastError) {
-    if (status == 'sent') {
-      return null;
-    }
-
-    if (status == 'failed' && (lastError ?? '').trim().isNotEmpty) {
-      return lastError;
-    }
-
-    if (status == 'skipped') {
-      return 'Auto-email is disabled in settings or was skipped by policy.';
-    }
-
-    if (status == 'pending') {
-      return 'Email dispatch is waiting for processing.';
-    }
-
-    return 'Email has not been sent yet.';
   }
 
   Future<void> _retryAutoEmail({
@@ -468,19 +421,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       .whereType<Map>()
                       .map((item) => Map<String, dynamic>.from(item))
                       .toList();
-              final autoEmailStatus = (data['autoEmailStatus'] ?? 'not_sent')
-                  .toString();
-              final autoEmailStatusLabel = _autoEmailStatusLabel(
-                autoEmailStatus,
-              );
-              final autoEmailStatusColor = _autoEmailStatusColor(
-                autoEmailStatus,
-              );
-              final autoEmailStatusReason = _autoEmailStatusReason(
-                autoEmailStatus,
-                (data['autoEmailLastError'] ?? '').toString(),
-              );
-              final autoEmailSent = autoEmailStatus == 'sent';
+              final status = RequisitionStatus.fromRequisition(data);
+              final emailSent = RequisitionFields.emailStatus(data) == 'sent';
+              final emailLastError = (data['autoEmailLastError'] ?? '')
+                  .toString()
+                  .trim();
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -531,6 +476,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      StatusBadge(status: status, dense: true),
                     ],
                   ),
                   subtitle: Padding(
@@ -717,42 +664,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             MainAxisAlignment.spaceBetween,
                                         children: [
                                           const Text(
-                                            'Email Status:',
+                                            'Status:',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: autoEmailStatusColor
-                                                  .withValues(alpha: 0.14),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              autoEmailStatusLabel,
-                                              style: TextStyle(
-                                                color: autoEmailStatusColor,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
+                                          StatusBadge(status: status),
                                         ],
                                       ),
-                                      if (autoEmailStatusReason != null) ...[
-                                        const SizedBox(height: 6),
+                                      const SizedBox(height: 6),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          status.detail,
+                                          style: const TextStyle(
+                                            color: AppStyles.textSecondaryColor,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                      if (status.kind ==
+                                              RequisitionStatusKind
+                                                  .deliveryFailed &&
+                                          emailLastError.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
                                         Align(
                                           alignment: Alignment.centerLeft,
                                           child: Text(
-                                            autoEmailStatusReason,
+                                            emailLastError,
                                             style: const TextStyle(
-                                              color:
-                                                  AppStyles.textSecondaryColor,
-                                              fontSize: 12,
+                                              color: AppStyles.textLightColor,
+                                              fontSize: 11,
                                             ),
                                           ),
                                         ),
@@ -880,7 +822,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   onPressed: () =>
                                       _confirmDelete(context, doc.id),
                                 ),
-                                if (isAdmin && !autoEmailSent)
+                                if (isAdmin && !emailSent)
                                   _buildActionButton(
                                     icon: Icons.refresh_outlined,
                                     label: 'Retry Email',

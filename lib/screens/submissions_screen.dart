@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../utils/requisition_fields.dart';
+import '../models/requisition_status.dart';
+import '../widgets/status_badge.dart';
 
 class SubmissionsScreen extends StatefulWidget {
   const SubmissionsScreen({super.key});
@@ -224,10 +226,17 @@ class _SubmissionsScreenState extends State<SubmissionsScreen> {
                   final data =
                       filteredDocs[dataIndex].data() ?? <String, dynamic>{};
                   final ts = RequisitionFields.timestamp(data);
+                  final status = RequisitionStatus.fromRequisition(data);
                   return ListTile(
+                    isThreeLine: true,
                     title: Text(RequisitionFields.sorNumber(data)),
-                    subtitle: Text(
-                      "Customer: ${data['customerName'] ?? 'N/A'}",
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Customer: ${data['customerName'] ?? 'N/A'}"),
+                        const SizedBox(height: 6),
+                        StatusBadge(status: status, dense: true),
+                      ],
                     ),
                     trailing: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
