@@ -28,7 +28,7 @@ android {
 
     defaultConfig {
         applicationId = "com.marc.new_test_store"
-        minSdk = flutter.minSdkVersion 
+        minSdk = flutter.minSdkVersion // Firebase BoM 33.15 needs API 23; Flutter's default currently satisfies that floor
         targetSdk = 34
         multiDexEnabled = true
         versionCode = 1
