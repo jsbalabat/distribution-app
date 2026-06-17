@@ -25,4 +25,29 @@ class RequisitionFields {
     final value = (data['userID'] ?? data['uid'] ?? '').toString();
     return value;
   }
+
+  // Canonical emailStatus first, then the legacy autoEmailStatus both are written
+  // during the field transition; returns a trimmed, lower-cased value.
+  static String emailStatus(Map<String, dynamic> data) {
+    return (data['emailStatus'] ?? data['autoEmailStatus'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
+  static String approvalRoute(Map<String, dynamic> data) {
+    return (data['approvalRoute'] ?? '').toString().trim().toLowerCase();
+  }
+
+  static List<String> approvalReasons(Map<String, dynamic> data) {
+    final value = data['approvalReasons'];
+    if (value is List) {
+      return value.map((reason) => reason.toString()).toList();
+    }
+    return const [];
+  }
+
+  static bool isDeleted(Map<String, dynamic> data) {
+    return data['isDeleted'] == true;
+  }
 }
