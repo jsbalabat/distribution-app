@@ -41,6 +41,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final QueueRepository _queueRepository = QueueRepository();
   bool _queueReady = false;
   bool _isSyncing = false;
+  // Active server-status filter for the synced list; null = show all.
+  RequisitionStatusKind? _statusFilter;
 
   @override
   void initState() {
@@ -380,36 +382,128 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       // Only wrap in the queue listener once the box is open; otherwise fall back
       // to the unchanged server-only view.
-      body: _queueReady
-          ? ValueListenableBuilder(
-              valueListenable: _queueRepository.listenable(),
-              builder: (context, _, __) {
-                final offlineItems = _queueRepository.getDashboardVisible(
-                  userId: uid ?? '',
-                  tenantDatabaseId: FirestoreTenant.instance.databaseId,
-                );
-                return _dashboardStream(
-                  uid: uid,
-                  actorCompanyId: actorCompanyId,
-                  isAdmin: isAdmin,
-                  currencyFormat: currencyFormat,
-                  offlineItems: offlineItems,
-                );
-              },
-            )
-          : _dashboardStream(
-              uid: uid,
-              actorCompanyId: actorCompanyId,
-              isAdmin: isAdmin,
-              currencyFormat: currencyFormat,
-              offlineItems: const [],
-            ),
+      body: Column(
+        children: [
+          _buildFilterBar(),
+          Expanded(
+            child: _queueReady
+                ? ValueListenableBuilder(
+                    valueListenable: _queueRepository.listenable(),
+                    builder: (context, _, __) {
+                      final offlineItems = _queueRepository.getDashboardVisible(
+                        userId: uid ?? '',
+                        tenantDatabaseId: FirestoreTenant.instance.databaseId,
+                      );
+                      return _dashboardStream(
+                        uid: uid,
+                        actorCompanyId: actorCompanyId,
+                        isAdmin: isAdmin,
+                        currencyFormat: currencyFormat,
+                        offlineItems: offlineItems,
+                      );
+                    },
+                  )
+                : _dashboardStream(
+                    uid: uid,
+                    actorCompanyId: actorCompanyId,
+                    isAdmin: isAdmin,
+                    currencyFormat: currencyFormat,
+                    offlineItems: const [],
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppStyles.secondaryColor,
         child: const Icon(Icons.add, color: Colors.white),
         onPressed: () {
           Navigator.pushNamed(context, '/form');
         },
+      ),
+    );
+  }
+
+  // Chips mirror the server-side kinds RequisitionStatus.fromRequisition can
+  // return; the null chip clears the filter. Offline/queue kinds aren't here —
+  // the pending-upload tray stays visible regardless of the active filter.
+  static const List<({RequisitionStatusKind? kind, String label})>
+  _statusFilterOptions = [
+    (kind: null, label: 'All'),
+    (kind: RequisitionStatusKind.awaitingApproval, label: 'Awaiting approval'),
+    (kind: RequisitionStatusKind.cleared, label: 'Cleared'),
+    (kind: RequisitionStatusKind.deliveryFailed, label: 'Delivery failed'),
+    (kind: RequisitionStatusKind.sending, label: 'Sending'),
+    (kind: RequisitionStatusKind.notSent, label: 'Not sent'),
+    (kind: RequisitionStatusKind.emailOff, label: 'Email off'),
+    (kind: RequisitionStatusKind.archived, label: 'Archived'),
+  ];
+
+  Widget _buildFilterBar() {
+    return Container(
+      width: double.infinity,
+      color: AppStyles.cardColor,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _statusFilterOptions.map((option) {
+            final selected = _statusFilter == option.kind;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(option.label),
+                selected: selected,
+                showCheckmark: false,
+                backgroundColor: AppStyles.backgroundColor,
+                selectedColor: AppStyles.primaryColor,
+                labelStyle: TextStyle(
+                  color: selected ? Colors.white : AppStyles.textColor,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+                onSelected: (_) => setState(() => _statusFilter = option.kind),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  // Keeps only synced records whose unified status matches the active chip.
+  List<QueryDocumentSnapshot<Object?>> _filterDocsByStatus(
+    List<QueryDocumentSnapshot<Object?>> docs,
+  ) {
+    final filter = _statusFilter;
+    if (filter == null) return docs;
+    return docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return RequisitionStatus.fromRequisition(data).kind == filter;
+    }).toList();
+  }
+
+  Widget _buildNoMatchState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.filter_alt_off_outlined,
+            size: 48,
+            color: AppStyles.textSecondaryColor,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'No requisitions match this filter.',
+            style: TextStyle(
+              color: AppStyles.textSecondaryColor,
+              fontSize: 14,
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _statusFilter = null),
+            child: const Text('Show all'),
+          ),
+        ],
       ),
     );
   }
@@ -453,10 +547,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           );
         }
 
-        final docs = _sortDashboardDocs(snapshot.data?.docs ?? []);
+        final docs = _filterDocsByStatus(
+          _sortDashboardDocs(snapshot.data?.docs ?? []),
+        );
 
         if (docs.isEmpty && !hasOffline) {
-          return _buildEmptyState();
+          return _statusFilter == null
+              ? _buildEmptyState()
+              : _buildNoMatchState();
         }
 
         final headerCount = hasOffline ? 1 : 0;
