@@ -642,6 +642,10 @@ class _FormScreenState extends State<FormScreen> {
           _invoiceDate = null;
           _dispatchDate = null;
         });
+        if (!mounted) return;
+        // Mirror the online path back to the dashboard; the queued SOR shows up
+        // there live via the reactive "Pending upload" section.
+        Navigator.pop(context);
         return;
       }
 
