@@ -288,6 +288,47 @@ class QueueRepository implements OfflineQueueRepository {
         .toList();
   }
 
+  /// Live handle to the queue box so widgets can rebuild as items sync in/out.
+  ValueListenable<Box<QueuedSalesRequisition>> listenable() {
+    _ensureInitialized();
+    return _queueBox.listenable();
+  }
+
+  /// Queue items the user should still see on their dashboard: those not yet
+  /// accepted by the server (or stuck needing action), scoped to the active
+  /// tenant and user so a shared device never surfaces another company's queue.
+  /// Newest first, to match the dashboard's ordering.
+  List<QueuedSalesRequisition> getDashboardVisible({
+    required String userId,
+    required String tenantDatabaseId,
+  }) {
+    _ensureInitialized();
+
+    // Once a SOR is accepted it exists in Firestore, so we stop surfacing it
+    // from the queue to avoid showing the same submission twice.
+    const visibleStatuses = {
+      OfflineSorStatus.draftOffline,
+      OfflineSorStatus.pendingSync,
+      OfflineSorStatus.syncing,
+      OfflineSorStatus.requiresRelogin,
+      OfflineSorStatus.rejectedValidation,
+      OfflineSorStatus.rejectedInventory,
+      OfflineSorStatus.failedRequiresUserAction,
+    };
+
+    final items = _queueBox.values
+        .where(
+          (sor) =>
+              sor.userId == userId &&
+              sor.tenantDatabaseId == tenantDatabaseId &&
+              visibleStatuses.contains(sor.status),
+        )
+        .toList();
+
+    items.sort((a, b) => b.createdTimestamp.compareTo(a.createdTimestamp));
+    return items;
+  }
+
   /// Gets all SORs eligible for manual retry (not at limit, not on cooldown)
   List<QueuedSalesRequisition> getAvailableForManualRetry() {
     _ensureInitialized();
