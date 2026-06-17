@@ -197,6 +197,9 @@ Icon?
 .Spotlight-V100
 .Trashes
 
+# Local AI-assistant tooling config
+CLAUDE.md
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
