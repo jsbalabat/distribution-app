@@ -22,6 +22,14 @@ class AppStyles {
     0xFF000000,
   ); // Pure Black (Admin)
 
+  // Semantic status tints — used only by invoice status badges, intentionally
+  // outside the monochrome palette so statuses stay visually distinguishable.
+  static const Color statusSuccess = Color(0xFF2E7D32); // Cleared (green)
+  static const Color statusWarning = Color(0xFFB26A00); // Awaiting approval (amber)
+  static const Color statusDanger = Color(0xFFC62828); // Delivery failed (red)
+  static const Color statusInfo = Color(0xFF1565C0); // Sending in progress (blue)
+  static const Color statusNeutral = Color(0xFF6B6B6B); // Not sent / off / archived (grey)
+
   static const double fontSizeSmall = 12.0;
   static const double fontSizeNormal = 14.0;
   static const double fontSizeMedium = 16.0;
