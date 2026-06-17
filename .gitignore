@@ -199,6 +199,7 @@ Icon?
 
 # Local AI-assistant tooling config
 CLAUDE.md
+.claude/
 
 # Windows image file caches
 Thumbs.db
