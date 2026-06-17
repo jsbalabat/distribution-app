@@ -50,6 +50,10 @@ class QueueRepository implements OfflineQueueRepository {
       if (!Hive.isAdapterRegistered(2)) {
         Hive.registerAdapter(OfflineErrorCategoryAdapter());
       }
+      // Firestore Timestamps ride inside sorDraftPayload; Hive needs this to store them.
+      if (!Hive.isAdapterRegistered(3)) {
+        Hive.registerAdapter(TimestampAdapter());
+      }
 
       // Initialize Hive
       await Hive.initFlutter();

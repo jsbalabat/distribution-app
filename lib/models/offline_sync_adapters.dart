@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 import 'offline_sync_contract.dart';
 
@@ -32,5 +33,28 @@ class OfflineErrorCategoryAdapter extends TypeAdapter<OfflineErrorCategory> {
   @override
   void write(BinaryWriter writer, OfflineErrorCategory obj) {
     writer.writeString(obj.name);
+  }
+}
+
+/// TypeId 3 reserved for the Firestore Timestamp adapter.
+// Queued SOR payloads carry Firestore Timestamps (invoice/dispatch dates,
+// queuedAt) that Hive can't serialize natively; we persist them as
+// seconds+nanoseconds so they stay real Timestamps for the sync worker's
+// Firestore write.
+class TimestampAdapter extends TypeAdapter<Timestamp> {
+  @override
+  final int typeId = 3;
+
+  @override
+  Timestamp read(BinaryReader reader) {
+    final seconds = reader.readInt();
+    final nanoseconds = reader.readInt();
+    return Timestamp(seconds, nanoseconds);
+  }
+
+  @override
+  void write(BinaryWriter writer, Timestamp obj) {
+    writer.writeInt(obj.seconds);
+    writer.writeInt(obj.nanoseconds);
   }
 }
