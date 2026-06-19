@@ -331,7 +331,7 @@ class ReviewSection extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Click submit to finalize your sales requisition. You can track its status from the dashboard.',
+                    'Your SOR number and any credit notices are assigned when this requisition uploads. Click submit to finalize — you can track its status from the dashboard.',
                     style: AppStyles.captionStyle.copyWith(
                       fontSize: 13,
                       height: 1.5,

@@ -16,12 +16,20 @@ class OfflineSubmissionResult {
   final String requisitionId;
   final String? queueItemId;
   final OfflineSorStatus? queueStatus;
+  // Set on the online route, where the server assigns these at write time; null
+  // for queued routes, which receive them later when the sync worker uploads.
+  final String? sorNumber;
+  final String? remark1;
+  final String? remark2;
 
   const OfflineSubmissionResult({
     required this.route,
     required this.requisitionId,
     this.queueItemId,
     this.queueStatus,
+    this.sorNumber,
+    this.remark1,
+    this.remark2,
   });
 
   bool get wasQueued => route != OfflineSubmissionRoute.online;
@@ -54,14 +62,17 @@ class OfflineSubmissionService {
     if (hasConnectivity) {
       final refreshed = await _authService.refreshSessionIfPossible();
       if (refreshed) {
-        final requisitionId = await _firestoreService.submitSOR(formData);
+        final outcome = await _firestoreService.submitSOR(formData);
         AppLogger.info(
           'Online requisition submission succeeded for uid=${user.uid}',
           tag: 'OFFLINE_GATE',
         );
         return OfflineSubmissionResult(
           route: OfflineSubmissionRoute.online,
-          requisitionId: requisitionId,
+          requisitionId: outcome.requisitionId,
+          sorNumber: outcome.sorNumber,
+          remark1: outcome.remark1,
+          remark2: outcome.remark2,
         );
       }
 

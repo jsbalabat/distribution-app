@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:new_test_store/models/offline_sync_contract.dart';
 import 'package:new_test_store/models/queued_sales_requisition.dart';
+import 'package:new_test_store/services/firestore_service.dart';
 import 'package:new_test_store/services/offline_queue_repository.dart';
 import 'package:new_test_store/services/offline_sync_worker.dart';
 
@@ -32,7 +33,8 @@ void main() {
         queueRepository: repo,
         connectivityCheck: () async => true,
         hasFreshSession: () async => true,
-        submitSor: (_) async => 'server-id-1',
+        submitSor: (_) async =>
+            const SubmissionResult(requisitionId: 'server-id-1', sorNumber: 'HDI1-260619-001'),
       );
 
       final report = await worker.syncPendingQueue(ignoreBackoff: true);
@@ -118,7 +120,8 @@ void main() {
         queueRepository: repo,
         connectivityCheck: () async => true,
         hasFreshSession: () async => true,
-        submitSor: (_) async => 'server-id-2',
+        submitSor: (_) async =>
+            const SubmissionResult(requisitionId: 'server-id-2', sorNumber: 'HDI1-260619-002'),
       );
 
       final report = await worker.syncPendingQueue(now: now, ignoreBackoff: false);

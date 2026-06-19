@@ -11,7 +11,7 @@ import 'queue_repository.dart';
 typedef ConnectivityCheck = Future<bool> Function();
 typedef SessionFreshCheck = Future<bool> Function();
 typedef SessionRefresh = Future<bool> Function();
-typedef SubmitSor = Future<String> Function(Map<String, dynamic> payload);
+typedef SubmitSor = Future<SubmissionResult> Function(Map<String, dynamic> payload);
 
 class OfflineSyncReport {
   int scanned = 0;
@@ -285,7 +285,7 @@ class OfflineSyncWorker {
     return _authService!.refreshSessionIfPossible();
   }
 
-  Future<String> _submit(Map<String, dynamic> payload) async {
+  Future<SubmissionResult> _submit(Map<String, dynamic> payload) async {
     if (_submitSor != null) {
       return _submitSor(payload);
     }

@@ -5,8 +5,46 @@ import '../models/user_model.dart';
 import 'audit_service.dart';
 import 'firestore_tenant.dart';
 import 'notification_service.dart';
+import 'sor_number_allocator.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
+import '../utils/remark_evaluator.dart';
+
+/// Outcome of writing a requisition: the new doc id plus the server-assigned SOR
+/// number and the remarks computed at write time, so callers can use them for the
+/// PDF/email without trusting any client-side value.
+class SubmissionResult {
+  final String requisitionId;
+  final String sorNumber;
+  final String? remark1;
+  final String? remark2;
+
+  const SubmissionResult({
+    required this.requisitionId,
+    required this.sorNumber,
+    this.remark1,
+    this.remark2,
+  });
+}
+
+/// A customer's current receivable position, used to derive credit remarks.
+class AccountReceivableSnapshot {
+  final double amountDue;
+  final double over30Days;
+  final double unsecuredFunds;
+
+  const AccountReceivableSnapshot({
+    required this.amountDue,
+    required this.over30Days,
+    required this.unsecuredFunds,
+  });
+
+  static const AccountReceivableSnapshot empty = AccountReceivableSnapshot(
+    amountDue: 0,
+    over30Days: 0,
+    unsecuredFunds: 0,
+  );
+}
 
 class FirestoreService {
   static const int defaultSubmissionLimit = 100;
@@ -19,25 +57,33 @@ class FirestoreService {
   FirebaseFirestore get _firestore => _tenant.firestore;
 
   // Save a new SOR form
-  Future<String> submitSOR(Map<String, dynamic> formData) async {
+  Future<SubmissionResult> submitSOR(Map<String, dynamic> formData) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
-    final now = Timestamp.now();
-    final normalized = {
-      ...formData,
-      'userID': formData['userID'] ?? uid,
-      'uid': formData['uid'] ?? uid,
-      'sorNumber': formData['sorNumber'] ?? formData['sorNo'],
-      'sorNo': formData['sorNo'] ?? formData['sorNumber'],
-      'totalAmount': formData['totalAmount'] ?? formData['amount'] ?? 0,
-      'amount': formData['amount'] ?? formData['totalAmount'] ?? 0,
-      'timeStamp': formData['timeStamp'] ?? formData['timestamp'] ?? now,
-      'timestamp': formData['timestamp'] ?? formData['timeStamp'] ?? now,
-      'createdAt': formData['createdAt'] ?? now,
-    };
-
     try {
+      // Server-authoritative: claim a unique number and recompute remarks from
+      // current receivable data, overriding whatever the client (or a stale
+      // offline draft) carried on the form.
+      final sorNumber = await SorNumberAllocator.instance.allocate();
+      final remarks = await _evaluateRemarks(formData);
+
+      final now = Timestamp.now();
+      final normalized = {
+        ...formData,
+        'userID': formData['userID'] ?? uid,
+        'uid': formData['uid'] ?? uid,
+        'sorNumber': sorNumber,
+        'sorNo': sorNumber,
+        'remark1': remarks.remark1,
+        'remark2': remarks.remark2,
+        'totalAmount': formData['totalAmount'] ?? formData['amount'] ?? 0,
+        'amount': formData['amount'] ?? formData['totalAmount'] ?? 0,
+        'timeStamp': formData['timeStamp'] ?? formData['timestamp'] ?? now,
+        'timestamp': formData['timestamp'] ?? formData['timeStamp'] ?? now,
+        'createdAt': formData['createdAt'] ?? now,
+      };
+
       final docRef = await _firestore
           .collection('salesRequisitions')
           .add(normalized);
@@ -46,13 +92,12 @@ class FirestoreService {
         entityType: 'salesRequisition',
         entityId: docRef.id,
         details: {
-          'sorNumber': normalized['sorNumber'],
+          'sorNumber': sorNumber,
           'totalAmount': normalized['totalAmount'],
           'itemCount': (normalized['items'] as List<dynamic>? ?? []).length,
         },
       );
 
-      final sorNumber = (normalized['sorNumber'] ?? docRef.id).toString();
       final customerName = (normalized['customerName'] ?? 'your requisition')
           .toString();
 
@@ -75,7 +120,12 @@ class FirestoreService {
         details: {'sorNumber': sorNumber, 'submittedBy': uid},
       );
 
-      return docRef.id;
+      return SubmissionResult(
+        requisitionId: docRef.id,
+        sorNumber: sorNumber,
+        remark1: remarks.remark1,
+        remark2: remarks.remark2,
+      );
     } on FirebaseException catch (e, st) {
       AppLogger.error(
         'Failed to submit sales requisition',
@@ -95,6 +145,52 @@ class FirestoreService {
       );
       throw Exception('Unable to submit requisition right now.');
     }
+  }
+
+  /// Reads a customer's receivable position. An absent record is a legitimate
+  /// "no balance" (empty); a read failure propagates so we never silently
+  /// under-flag credit on a transient error.
+  Future<AccountReceivableSnapshot> fetchAccountReceivable(
+    String accountNumber,
+  ) async {
+    if (accountNumber.isEmpty) {
+      return AccountReceivableSnapshot.empty;
+    }
+
+    final snapshot = await _firestore
+        .collection('accountReceivable')
+        .where('accountNumber', isEqualTo: accountNumber)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      return AccountReceivableSnapshot.empty;
+    }
+
+    final data = snapshot.docs.first.data();
+    return AccountReceivableSnapshot(
+      amountDue: (data['amountDue'] ?? 0).toDouble(),
+      over30Days: (data['overThirtyDays'] ?? 0).toDouble(),
+      unsecuredFunds: (data['unsecured'] ?? 0).toDouble(),
+    );
+  }
+
+  Future<RemarkEvaluation> _evaluateRemarks(
+    Map<String, dynamic> formData,
+  ) async {
+    final accountNumber = (formData['accountNumber'] ?? '').toString();
+    final creditLimit = (formData['creditLimit'] as num?)?.toDouble() ?? 0;
+    final orderTotal =
+        ((formData['totalAmount'] ?? formData['amount'] ?? 0) as num).toDouble();
+
+    final receivable = await fetchAccountReceivable(accountNumber);
+    return RemarkEvaluator.evaluate(
+      creditLimit: creditLimit,
+      amountDue: receivable.amountDue,
+      over30Days: receivable.over30Days,
+      unsecuredFunds: receivable.unsecuredFunds,
+      orderTotal: orderTotal,
+    );
   }
 
   Future<Map<String, dynamic>?> fetchItemPrice(String itemCode) async {

@@ -53,9 +53,6 @@ class _FormScreenState extends State<FormScreen> {
   String? _sorNumber;
   String? _selectedFileName;
   double? _creditLimit;
-  double? _amountDue;
-  double? _over30Days;
-  double? _unsecuredFunds;
 
   Map<String, dynamic>? _selectedCustomer;
   DateTime? _dispatchDate;
@@ -111,7 +108,6 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
-  Map<String, String> _customerIdMap = {};
   List<Map<String, dynamic>> _customers = [];
   final List<bool> _stepValid = [
     false,
@@ -129,15 +125,7 @@ class _FormScreenState extends State<FormScreen> {
 
     if (mounted) {
       setState(() {
-        _customers = [];
-        _customerIdMap = {};
-        for (var doc in snapshot.docs) {
-          final data = doc.data(); // full customer map
-          final name = data['name'];
-
-          _customers.add(data); // store full map
-          _customerIdMap[name] = doc.id; // optional: for ID use
-        }
+        _customers = snapshot.docs.map((doc) => doc.data()).toList();
       });
     }
   }
@@ -239,32 +227,6 @@ class _FormScreenState extends State<FormScreen> {
     super.dispose();
   }
 
-  Future<void> _checkRemarks(double totalAmount) async {
-    final creditLimit = _creditLimit;
-    final accountNumber = _accountNumber;
-    await fetchAccountReceivable(accountNumber!);
-    final amountDue = _amountDue! + totalAmount;
-    final over30Days = _over30Days;
-    final unsecuredFunds = _unsecuredFunds;
-
-    if (creditLimit != null && amountDue > creditLimit) {
-      _remark1 = 'OCL';
-    } else {
-      _remark1 = null;
-    }
-    if (over30Days! > 0 || unsecuredFunds! > 0) {
-      _remark2 = 'Past Due / Unsecured';
-    } else {
-      _remark2 = null;
-    }
-
-    if (mounted) {
-      setState(() {
-        _currentStep += 1;
-      });
-    }
-  }
-
   double _calculateTotal() {
     double total = 0;
     for (var item in _selectedItems) {
@@ -272,109 +234,6 @@ class _FormScreenState extends State<FormScreen> {
       total += (subtotal is num) ? subtotal.toDouble() : 0;
     }
     return total;
-  }
-
-  Future<String> generateSORNumber(String accountNumber) async {
-    try {
-      final now = DateTime.now();
-      final dateStr = DateFormat(
-        'yyMMdd',
-      ).format(now); // '260121' for Jan 21, 2026
-      final prefix = 'HDI1-$dateStr';
-
-      // Get start and end of today
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
-
-      try {
-        // Query all SORs created today by checking the createdAt timestamp
-        final snapshot = await FirestoreTenant.instance.firestore
-            .collection('salesRequisitions')
-            .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
-            .where('createdAt', isLessThanOrEqualTo: endOfDay)
-            .get();
-
-        // Count today's SORs and increment
-        final count = snapshot.docs.length + 1;
-        final paddedCount = count.toString().padLeft(3, '0');
-        final sorNumber = '$prefix-$paddedCount';
-
-        return sorNumber;
-      } catch (e) {
-        // Fallback: Try filtering client-side if query fails
-        try {
-          final snapshot = await FirestoreTenant.instance.firestore
-              .collection('salesRequisitions')
-              .orderBy('createdAt', descending: true)
-              .limit(100)
-              .get();
-
-          // Filter today's SORs client-side
-          final todayDocs = snapshot.docs.where((doc) {
-            final data = doc.data();
-            final createdAt = data['createdAt'];
-            if (createdAt == null) return false;
-
-            final createdDate = (createdAt as Timestamp).toDate();
-            return createdDate.year == now.year &&
-                createdDate.month == now.month &&
-                createdDate.day == now.day;
-          }).toList();
-
-          final count = todayDocs.length + 1;
-          final paddedCount = count.toString().padLeft(3, '0');
-          final sorNumber = '$prefix-$paddedCount';
-
-          return sorNumber;
-        } catch (e2) {
-          // Final fallback - start with 001
-          return '$prefix-001';
-        }
-      }
-    } catch (e) {
-      // Emergency fallback
-      final now = DateTime.now();
-      final dateStr = DateFormat('yyMMdd').format(now);
-      return 'HDI1-$dateStr-001';
-    }
-  }
-
-  Future<void> fetchAccountReceivable(String accountNumber) async {
-    try {
-      final snapshot = await FirestoreTenant.instance.firestore
-          .collection('accountReceivable')
-          .where('accountNumber', isEqualTo: accountNumber)
-          .limit(1)
-          .get();
-
-      if (snapshot.docs.isNotEmpty && mounted) {
-        final data = snapshot.docs.first.data();
-        setState(() {
-          _amountDue = (data['amountDue'] ?? 0).toDouble();
-          _over30Days = (data['overThirtyDays'] ?? 0).toDouble();
-          _unsecuredFunds = (data['unsecured'] ?? 0).toDouble();
-        });
-      } else {
-        setState(() {
-          _amountDue = 0;
-          _over30Days = 0;
-          _unsecuredFunds = 0;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      handleError(
-        context,
-        'Failed to fetch account receivable data: $e',
-        type: ErrorType.network,
-      );
-      // Set default values on error
-      setState(() {
-        _amountDue = 0;
-        _over30Days = 0;
-        _unsecuredFunds = 0;
-      });
-    }
   }
 
   void _confirmAndSubmit() {
@@ -459,29 +318,12 @@ class _FormScreenState extends State<FormScreen> {
       context: context,
       builder: (context) => CustomerSearchDialog(
         customers: _customers,
-        onCustomerSelected: (customer) async {
+        onCustomerSelected: (customer) {
           setState(() {
             _selectedCustomer = customer;
             _accountNumber = customer['accountNumber'];
             _creditLimit = customer['creditLimit']?.toDouble() ?? 0;
           });
-
-          final customerName = customer['name'];
-          final docId = _customerIdMap[customerName];
-          if (docId != null) {
-            final doc = await FirestoreTenant.instance.firestore
-                .collection('customers')
-                .doc(docId)
-                .get();
-            final account = doc['accountNumber'];
-            final generatedSOR = await generateSORNumber(account);
-
-            if (!mounted) return;
-            setState(() {
-              _accountNumber = account;
-              _sorNumber = generatedSOR;
-            });
-          }
         },
       ),
     );
@@ -650,9 +492,18 @@ class _FormScreenState extends State<FormScreen> {
       }
 
       try {
+        // Use the server-assigned number and remarks for the PDF/email; the form
+        // no longer generates them locally.
+        final finalizedData = {
+          ...formData,
+          'sorNumber': submissionResult.sorNumber,
+          'sorNo': submissionResult.sorNumber,
+          'remark1': submissionResult.remark1,
+          'remark2': submissionResult.remark2,
+        };
         await _sendAutoRoutedEmailWithRetries(
           requisitionId: submissionResult.requisitionId,
-          requisitionData: formData,
+          requisitionData: finalizedData,
         );
       } catch (e) {
         if (!mounted) return;
@@ -748,7 +599,7 @@ class _FormScreenState extends State<FormScreen> {
     return true;
   }
 
-  void _handleStepContinue() async {
+  void _handleStepContinue() {
     if (!_isCurrentStepValid(_currentStep)) {
       handleError(
         context,
@@ -758,11 +609,9 @@ class _FormScreenState extends State<FormScreen> {
       return;
     }
 
-    final isGoingToFinalStep = _currentStep + 1 == _buildSteps().length - 1;
-    if (isGoingToFinalStep) {
-      final total = _calculateTotal();
-      await _checkRemarks(total);
-    } else if (_currentStep < _buildSteps().length - 1) {
+    // Remarks and the SOR number are assigned server-side at submit time, so
+    // advancing to the review step is just a step change.
+    if (_currentStep < _buildSteps().length - 1) {
       setState(() {
         _currentStep += 1;
       });
