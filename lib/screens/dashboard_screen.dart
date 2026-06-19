@@ -389,7 +389,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: _queueReady
                 ? ValueListenableBuilder(
                     valueListenable: _queueRepository.listenable(),
-                    builder: (context, _, __) {
+                    builder: (context, _, _) {
                       final offlineItems = _queueRepository.getDashboardVisible(
                         userId: uid ?? '',
                         tenantDatabaseId: FirestoreTenant.instance.databaseId,
