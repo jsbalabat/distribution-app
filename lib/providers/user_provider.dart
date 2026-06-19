@@ -6,6 +6,7 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_tenant.dart';
 import '../services/offline_sync_worker.dart';
+import '../services/reference_data_warmer.dart';
 import '../utils/app_logger.dart';
 
 class UserProvider with ChangeNotifier {
@@ -47,6 +48,23 @@ class UserProvider with ChangeNotifier {
     );
   }
 
+  void _scheduleWarm() {
+    unawaited(
+      Future<void>(() async {
+        try {
+          await ReferenceDataWarmer.instance.warm();
+        } catch (e, st) {
+          AppLogger.error(
+            'Background reference warm trigger failed',
+            error: e,
+            stackTrace: st,
+            tag: 'PROVIDER',
+          );
+        }
+      }),
+    );
+  }
+
   Future<void> _initUser() async {
     _isLoading = true;
     notifyListeners();
@@ -59,6 +77,7 @@ class UserProvider with ChangeNotifier {
 
     if (_currentUser != null) {
       _scheduleSync();
+      _scheduleWarm();
     }
 
     // Listen to auth changes
@@ -68,6 +87,7 @@ class UserProvider with ChangeNotifier {
         notifyListeners();
         if (user != null) {
           _scheduleSync();
+          _scheduleWarm();
         }
       },
       onError: (error, stackTrace) {
@@ -106,6 +126,7 @@ class UserProvider with ChangeNotifier {
       notifyListeners();
       if (_currentUser != null) {
         _scheduleSync();
+        _scheduleWarm();
       }
       AppLogger.info(
         'Provider signIn succeeded (isLoggedIn=${_currentUser != null})',
