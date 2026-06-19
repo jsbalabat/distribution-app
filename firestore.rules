@@ -148,6 +148,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // counters collection
+    // - Signed-in users atomically claim the next daily SOR number here.
+    //   (Could be tightened to an increment-only check if abuse becomes a concern.)
+    match /counters/{counterId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Catch-all (default deny for security)
     match /{document=**} {
       allow read, write: if false;
