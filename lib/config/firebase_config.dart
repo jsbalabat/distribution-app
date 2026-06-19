@@ -13,29 +13,38 @@ class FirebaseConfig {
   static late final String appId;
   static late final String environment;
 
+  static bool _initialized = false;
+
   /// Initialize Firebase configuration from .env file
   /// Call this before Firebase.initializeApp()
   static Future<void> initialize() async {
+    // Idempotent: the write-once fields below can only be set once, so a repeat
+    // call (e.g. a hot restart that kept static state) must no-op.
+    if (_initialized) return;
+
     try {
-      // Load environment variables from .env file
       await dotenv.load(fileName: ".env");
 
-      // Get values with fallbacks for safety
-      apiKey = dotenv.env['FIREBASE_API_KEY'] ?? '';
-      authDomain = dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? '';
-      projectId = dotenv.env['FIREBASE_PROJECT_ID'] ?? '';
-      storageBucket = dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? '';
-      messagingSenderId = dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? '';
-      appId = dotenv.env['FIREBASE_APP_ID'] ?? '';
-      environment = dotenv.env['ENVIRONMENT'] ?? 'development';
+      final loadedApiKey = dotenv.env['FIREBASE_API_KEY'] ?? '';
+      final loadedProjectId = dotenv.env['FIREBASE_PROJECT_ID'] ?? '';
 
-      // Validate required fields
-      if (apiKey.isEmpty || projectId.isEmpty) {
+      // Validate before assigning the write-once fields so a failed load stays retryable.
+      if (loadedApiKey.isEmpty || loadedProjectId.isEmpty) {
         throw Exception(
           'Missing required Firebase configuration. '
           'Please ensure .env file is properly configured.',
         );
       }
+
+      apiKey = loadedApiKey;
+      authDomain = dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? '';
+      projectId = loadedProjectId;
+      storageBucket = dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? '';
+      messagingSenderId = dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? '';
+      appId = dotenv.env['FIREBASE_APP_ID'] ?? '';
+      environment = dotenv.env['ENVIRONMENT'] ?? 'development';
+
+      _initialized = true;
     } catch (e, st) {
       AppLogger.error(
         'Failed to initialize FirebaseConfig from .env',
