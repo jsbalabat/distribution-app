@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/firestore_tenant.dart';
 import '../services/offline_sync_worker.dart';
 import '../services/reference_data_warmer.dart';
@@ -13,6 +14,12 @@ class UserProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   UserModel? _currentUser;
   bool _isLoading = true;
+
+  // Auto-sync when the network returns mid-session; debounced so a flapping
+  // connection triggers a single drain rather than one attempt per flap.
+  static const Duration _reconnectSyncDebounce = Duration(seconds: 2);
+  StreamSubscription<bool>? _connectivitySub;
+  Timer? _reconnectDebounce;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
@@ -99,6 +106,40 @@ class UserProvider with ChangeNotifier {
         );
       },
     );
+
+    _watchReconnect();
+  }
+
+  // Drains the offline queue automatically when connectivity returns while the
+  // app is open — without this, sync only runs on auth events or the manual
+  // refresh button. onlineStream is distinct, so a `true` here is a genuine
+  // offline->online transition; the worker's in-progress guard dedupes overlap.
+  void _watchReconnect() {
+    _connectivitySub = ConnectivityService.instance.onlineStream.listen((
+      online,
+    ) {
+      if (!online) {
+        _reconnectDebounce?.cancel();
+        return;
+      }
+      _reconnectDebounce?.cancel();
+      _reconnectDebounce = Timer(_reconnectSyncDebounce, () {
+        if (_currentUser != null) {
+          AppLogger.info(
+            'Connectivity restored; triggering offline sync.',
+            tag: 'PROVIDER',
+          );
+          _scheduleSync();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _reconnectDebounce?.cancel();
+    _connectivitySub?.cancel();
+    super.dispose();
   }
 
   Future<bool> signIn(
