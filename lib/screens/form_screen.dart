@@ -1,9 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 // import 'dart:math';
 import '../services/firestore_service.dart';
 import '../services/offline_submission_service.dart';
@@ -20,7 +18,7 @@ import '../widgets/confirmation_dialog.dart';
 // import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
-import 'generate_sales_pdf.dart';
+import '../services/requisition_email_service.dart';
 
 class FormStepData {
   final String title;
@@ -74,38 +72,25 @@ class _FormScreenState extends State<FormScreen> {
     required String requisitionId,
     required Map<String, dynamic> requisitionData,
   }) async {
-    final callable = FirebaseFunctions.instanceFor(
-      region: 'asia-southeast1',
-    ).httpsCallable('sendAutoRoutedRequisitionEmail');
-    final pdfBytes = await generateSalesPDF(requisitionData);
-    final pdfBase64 = base64Encode(pdfBytes);
-
-    Object? lastError;
-    for (var attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await callable.call(<String, dynamic>{
-          'requisitionId': requisitionId,
-          'pdfData': pdfBase64,
-          'fileName':
-              'SOR-${requisitionData['sorNumber'] ?? requisitionId}.pdf',
-          'actorDatabaseId': FirestoreTenant.instance.databaseId,
-        });
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Requisition submitted, but auto-email failed after 3 attempts: $lastError',
+    try {
+      await RequisitionEmailService.instance.sendAutoRoutedEmail(
+        requisitionId: requisitionId,
+        requisitionData: requisitionData,
+        actorDatabaseId: FirestoreTenant.instance.databaseId,
+        invocationContext: 'form_submit',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Requisition submitted, but auto-email failed after 3 attempts: $error',
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
         ),
-        backgroundColor: Colors.orange,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
+    }
   }
 
   List<Map<String, dynamic>> _customers = [];
