@@ -101,23 +101,47 @@ class AuthService {
   Future<UserModel?> getCurrentUser() async {
     final User? user = _auth.currentUser;
     if (user == null) return null;
+    return _loadProfile(user.uid);
+  }
 
+  /// Resolves the signed-in user's tenant profile, preferring the server but
+  /// falling back to Firestore's warmed on-disk cache when the backend is
+  /// unreachable, so an offline cold start routes a valid session through
+  /// instead of bouncing it to the sign-in screen. Returns null (keeping the
+  /// session) when the profile can't be resolved offline; signs out only on a
+  /// definitive server response that the profile is missing.
+  Future<UserModel?> _loadProfile(String uid) async {
     try {
-      final doc = await _firestore.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        return UserModel.fromMap(doc.data()!, user.uid);
-      } else {
-        AppLogger.warning(
-          'Signed-in user has no profile in the selected tenant database.',
-          tag: 'AUTH',
-        );
-        await _auth.signOut();
-        return null;
+      DocumentSnapshot<Map<String, dynamic>> doc;
+      try {
+        doc = await _firestore.collection('users').doc(uid).get();
+      } on FirebaseException catch (e) {
+        // Only an unreachable backend is worth a cache fallback; other errors
+        // (e.g. permission-denied) should surface, not read stale data.
+        if (e.code != 'unavailable') rethrow;
+        doc = await _firestore
+            .collection('users')
+            .doc(uid)
+            .get(const GetOptions(source: Source.cache));
       }
+
+      if (doc.exists) {
+        return UserModel.fromMap(doc.data()!, uid);
+      }
+
+      // A cached/offline read can't prove the profile is truly gone, so keep
+      // the session; only a definitive server "not found" warrants sign-out.
+      if (doc.metadata.isFromCache) return null;
+
+      AppLogger.warning(
+        'Signed-in user has no profile in the selected tenant database.',
+        tag: 'AUTH',
+      );
+      await _auth.signOut();
+      return null;
     } on FirebaseException catch (e, st) {
       AppLogger.error(
-        'Failed to load current user profile due to Firestore permission issue '
-        '(database=${_tenant.databaseId})',
+        'Failed to load user profile (database=${_tenant.databaseId})',
         error: e,
         stackTrace: st,
         tag: 'AUTH',
@@ -125,7 +149,7 @@ class AuthService {
       return null;
     } catch (e, st) {
       AppLogger.error(
-        'Failed to load current user profile',
+        'Failed to load user profile',
         error: e,
         stackTrace: st,
         tag: 'AUTH',
@@ -361,37 +385,7 @@ class AuthService {
   Stream<UserModel?> get userStream {
     return _auth.authStateChanges().asyncMap((User? user) async {
       if (user == null) return null;
-
-      try {
-        final doc = await _firestore.collection('users').doc(user.uid).get();
-        if (doc.exists) {
-          return UserModel.fromMap(doc.data()!, user.uid);
-        } else {
-          AppLogger.warning(
-            'Auth state changed but user profile is missing in tenant database.',
-            tag: 'AUTH',
-          );
-          await _auth.signOut();
-          return null;
-        }
-      } on FirebaseException catch (e, st) {
-        AppLogger.error(
-          'Failed to process auth state change user profile due to Firestore access '
-          '(database=${_tenant.databaseId})',
-          error: e,
-          stackTrace: st,
-          tag: 'AUTH',
-        );
-        return null;
-      } catch (e, st) {
-        AppLogger.error(
-          'Failed to process auth state change user profile',
-          error: e,
-          stackTrace: st,
-          tag: 'AUTH',
-        );
-        return null;
-      }
+      return _loadProfile(user.uid);
     });
   }
 }
