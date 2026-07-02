@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'connectivity_service.dart';
 import 'firestore_tenant.dart';
 import '../utils/app_logger.dart';
 
@@ -22,7 +22,6 @@ class ReferenceDataWarmer {
     'accountReceivable',
   ];
 
-  final Connectivity _connectivity = Connectivity();
   bool _warmInProgress = false;
 
   Future<void> warm() async {
@@ -35,7 +34,7 @@ class ReferenceDataWarmer {
     }
 
     // Warming only refreshes the cache when online — a server read is the point.
-    if (!await _hasConnectivity()) {
+    if (!await ConnectivityService.instance.isOnline()) {
       AppLogger.info('Skipping reference warm; device is offline.', tag: 'REF_WARM');
       return;
     }
@@ -97,12 +96,4 @@ class ReferenceDataWarmer {
     }
   }
 
-  Future<bool> _hasConnectivity() async {
-    try {
-      final results = await _connectivity.checkConnectivity();
-      return results.any((result) => result != ConnectivityResult.none);
-    } catch (_) {
-      return false;
-    }
-  }
 }

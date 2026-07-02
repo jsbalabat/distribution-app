@@ -1,9 +1,8 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
-
 import '../models/offline_sync_contract.dart';
 import '../models/queued_sales_requisition.dart';
 import '../utils/app_logger.dart';
 import 'auth_service.dart';
+import 'connectivity_service.dart';
 import 'firestore_service.dart';
 import 'firestore_tenant.dart';
 import 'offline_queue_repository.dart';
@@ -60,7 +59,6 @@ class OfflineSyncWorker {
   final OfflineQueueRepository _queueRepository;
   AuthService? _authService;
   FirestoreService? _firestoreService;
-  Connectivity? _connectivity;
 
   final ConnectivityCheck? _connectivityCheck;
   final SessionFreshCheck? _hasFreshSession;
@@ -272,9 +270,7 @@ class OfflineSyncWorker {
       return _connectivityCheck();
     }
 
-    _connectivity ??= Connectivity();
-    final results = await _connectivity!.checkConnectivity();
-    return results.any((result) => result != ConnectivityResult.none);
+    return ConnectivityService.instance.isOnline();
   }
 
   Future<bool> _checkFreshSession() async {

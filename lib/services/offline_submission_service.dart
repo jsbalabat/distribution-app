@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/offline_sync_contract.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/firestore_service.dart';
 import '../services/firestore_tenant.dart';
 import '../services/queue_repository.dart';
@@ -46,7 +46,6 @@ class OfflineSubmissionService {
   final FirestoreService _firestoreService = FirestoreService();
   final QueueRepository _queueRepository = QueueRepository();
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final Connectivity _connectivity = Connectivity();
 
   Future<OfflineSubmissionResult> submitOrQueue(
     Map<String, dynamic> formData,
@@ -56,7 +55,7 @@ class OfflineSubmissionService {
       throw Exception('User not authenticated');
     }
 
-    final hasConnectivity = await _hasConnectivity();
+    final hasConnectivity = await ConnectivityService.instance.isOnline();
     final cachedSessionFresh = await _authService.hasFreshCachedSession();
 
     if (hasConnectivity) {
@@ -91,25 +90,6 @@ class OfflineSubmissionService {
       user: user,
       status: queuedStatus,
     );
-  }
-
-  Future<bool> _hasConnectivity() async {
-    try {
-      final results = await _connectivity.checkConnectivity();
-      return results.any((result) => result != ConnectivityResult.none);
-    } on Exception catch (e, st) {
-      AppLogger.warning(
-        'Connectivity check failed; assuming offline queue mode',
-        tag: 'OFFLINE_GATE',
-      );
-      AppLogger.error(
-        'Connectivity gate failure',
-        error: e,
-        stackTrace: st,
-        tag: 'OFFLINE_GATE',
-      );
-      return false;
-    }
   }
 
   Future<OfflineSubmissionResult> _queueSubmission({
