@@ -29,12 +29,14 @@ void main() {
         _queuedSor('sor-2', status: OfflineSorStatus.pendingSync),
       ]);
 
+      var emailDispatched = false;
       final worker = OfflineSyncWorker(
         queueRepository: repo,
         connectivityCheck: () async => true,
         hasFreshSession: () async => true,
         submitSor: (_) async =>
             const SubmissionResult(requisitionId: 'server-id-1', sorNumber: 'HDI1-260619-001'),
+        emailDispatch: (_, _) async => emailDispatched = true,
       );
 
       final report = await worker.syncPendingQueue(ignoreBackoff: true);
@@ -42,7 +44,32 @@ void main() {
       expect(report.syncedAccepted, 1);
       expect(report.scanned, 1);
       expect(repo.markedAcceptedIds, contains('sor-2'));
-      expect(repo.lastStatusById['sor-2'], OfflineSorStatus.syncing);
+      expect(emailDispatched, true);
+      expect(repo.emailStatusById['sor-2'], OfflineSorStatus.emailSent);
+    });
+
+    test('keeps sync accepted but flags email retry when dispatch fails', () async {
+      final repo = _FakeOfflineQueueRepository([
+        _queuedSor('sor-8', status: OfflineSorStatus.pendingSync),
+      ]);
+
+      final worker = OfflineSyncWorker(
+        queueRepository: repo,
+        connectivityCheck: () async => true,
+        hasFreshSession: () async => true,
+        submitSor: (_) async =>
+            const SubmissionResult(requisitionId: 'server-id-8', sorNumber: 'HDI1-260619-008'),
+        emailDispatch: (_, _) async => throw Exception('email transport down'),
+      );
+
+      final report = await worker.syncPendingQueue(ignoreBackoff: true);
+
+      expect(report.syncedAccepted, 1);
+      expect(repo.markedAcceptedIds, contains('sor-8'));
+      expect(
+        repo.emailStatusById['sor-8'],
+        OfflineSorStatus.emailFailedRetryAvailable,
+      );
     });
 
     test('marks requiresRelogin when refresh fails', () async {
@@ -158,6 +185,7 @@ class _FakeOfflineQueueRepository implements OfflineQueueRepository {
   final Map<String, QueuedSalesRequisition> _items;
   final Map<String, OfflineSorStatus> lastStatusById = {};
   final Map<String, OfflineErrorCategory?> lastErrorCategoryById = {};
+  final Map<String, OfflineSorStatus?> emailStatusById = {};
   final List<String> markedAcceptedIds = [];
 
   @override
@@ -201,6 +229,7 @@ class _FakeOfflineQueueRepository implements OfflineQueueRepository {
     _items[clientGeneratedId] = updated;
     lastStatusById[clientGeneratedId] = newStatus;
     lastErrorCategoryById[clientGeneratedId] = errorCategory;
+    emailStatusById[clientGeneratedId] = emailStatus;
   }
 
   @override
