@@ -27,24 +27,27 @@ const db = admin.firestore();
   console.log("✓ users/test-user-001 seeded");
 
   // 2. Test item with sufficient stock for the smoke submit (qty=1).
-  await db.collection("itemMaster").doc("item-test-001").set({
+  // itemsAvailable is the collection the submit callable resolves + decrements
+  // (matches the running app); `quantity` is its stock field.
+  await db.collection("itemsAvailable").doc("item-test-001").set({
     code: "TEST-001",
     itemCode: "TEST-001",
     name: "Smoke Test Widget",
     description: "Used for SOR submission smoke tests.",
-    stock: 10,
+    date: "2026-07-02",
+    area: "SMOKE",
     quantity: 10,
     unitPrice: 100,
   });
-  console.log("✓ itemMaster/item-test-001 seeded (stock: 10, code: TEST-001)");
+  console.log("✓ itemsAvailable/item-test-001 seeded (quantity: 10, code: TEST-001)");
 
   // 3. Optional: dump back to confirm.
   console.log("");
   console.log("--- verification ---");
   const userSnap = await db.collection("users").doc("test-user-001").get();
   console.log("users/test-user-001:", userSnap.exists ? userSnap.data() : "MISSING");
-  const itemSnap = await db.collection("itemMaster").doc("item-test-001").get();
-  console.log("itemMaster/item-test-001:", itemSnap.exists ? itemSnap.data() : "MISSING");
+  const itemSnap = await db.collection("itemsAvailable").doc("item-test-001").get();
+  console.log("itemsAvailable/item-test-001:", itemSnap.exists ? itemSnap.data() : "MISSING");
 
   process.exit(0);
 })().catch((err) => {

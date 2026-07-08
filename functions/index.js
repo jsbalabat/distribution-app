@@ -1547,23 +1547,27 @@ function validateSubmitRequisitionPayload(data) {
 }
 
 /**
- * Resolves an itemMaster document reference by id (preferred) or code (fallback).
- * Queries are performed outside any transaction (Firestore txns disallow queries).
+ * Resolves an itemsAvailable document reference — the collection the app shows,
+ * edits, and decrements. Prefers the doc id (reliable: the SOR line-item id IS
+ * an itemsAvailable doc id), falling back to itemCode. The code fallback is
+ * ambiguous because itemsAvailable holds one row per (date, area, itemCode), so
+ * it may match an arbitrary area/date row; the id path avoids that.
+ * Queries run outside any transaction (Firestore txns disallow queries).
  * @param {FirebaseFirestore.Firestore} tenantDb Tenant Firestore client.
  * @param {{id: string, code: string}} lineItem Validated line item.
  * @return {Promise<FirebaseFirestore.DocumentReference|null>} Reference or null when not found.
  */
 async function resolveItemRef(tenantDb, lineItem) {
   if (lineItem.id) {
-    const byId = tenantDb.collection("itemMaster").doc(lineItem.id);
+    const byId = tenantDb.collection("itemsAvailable").doc(lineItem.id);
     const snap = await byId.get();
     if (snap.exists) return byId;
   }
   if (lineItem.code) {
-    const byCode = await tenantDb.collection("itemMaster").where("code", "==", lineItem.code).limit(1).get();
-    if (!byCode.empty) return byCode.docs[0].ref;
-    const byItemCode = await tenantDb.collection("itemMaster").where("itemCode", "==", lineItem.code).limit(1).get();
+    const byItemCode = await tenantDb.collection("itemsAvailable").where("itemCode", "==", lineItem.code).limit(1).get();
     if (!byItemCode.empty) return byItemCode.docs[0].ref;
+    const byCode = await tenantDb.collection("itemsAvailable").where("code", "==", lineItem.code).limit(1).get();
+    if (!byCode.empty) return byCode.docs[0].ref;
   }
   return null;
 }
@@ -1721,7 +1725,7 @@ exports.submitSalesRequisition = onCall(
               continue;
             }
             const itemData = snap.data() || {};
-            const availableRaw = itemData.stock !== undefined ? itemData.stock : itemData.quantity;
+            const availableRaw = itemData.quantity !== undefined ? itemData.quantity : itemData.stock;
             const available = Number(availableRaw);
             const requested = entry.lineItem.quantity;
             if (!Number.isFinite(available) || available < requested) {
@@ -1754,8 +1758,9 @@ exports.submitSalesRequisition = onCall(
           }
 
           for (const mutation of stockMutations) {
+            // itemsAvailable's stock field is `quantity`; write only it so a
+            // stale `stock` field can't later mask the value item_model reads.
             txn.update(mutation.ref, {
-              stock: mutation.newStock,
               quantity: mutation.newStock,
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -3040,11 +3045,10 @@ exports.rollbackRequisition = onCall(
               continue;
             }
             const itemData = snap.data() || {};
-            const currentRaw = itemData.stock !== undefined ? itemData.stock : itemData.quantity;
+            const currentRaw = itemData.quantity !== undefined ? itemData.quantity : itemData.stock;
             const current = Number(currentRaw);
             const restored = (Number.isFinite(current) ? current : 0) + entry.lineItem.quantity;
             txn.update(entry.ref, {
-              stock: restored,
               quantity: restored,
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });

@@ -11,7 +11,7 @@
 //   1. Emulators running: firebase emulators:start --only functions,firestore
 //   2. Seed data in the (default) Firestore database:
 //      - users/test-user-001 (any contents)
-//      - itemMaster/<any> with code: "TEST-001", stock: 10
+//      - itemsAvailable/<any> with itemCode: "TEST-001", quantity: 10
 //
 // Run from functions/ directory:
 //   node test/smoke-submit.js
