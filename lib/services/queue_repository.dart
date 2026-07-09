@@ -469,8 +469,10 @@ class QueueRepository implements OfflineQueueRepository {
         'details': details,
       });
 
-      final key = 'audit_${DateTime.now().millisecondsSinceEpoch}';
-      await _auditBox.put(key, logEntry);
+      // Auto-incrementing key: a millisecond-timestamp key collides when
+      // several audit events fire within the same millisecond, silently
+      // overwriting earlier entries.
+      await _auditBox.add(logEntry);
 
       // Debug log for development
       debugPrint('[QueueAudit] $eventType: $details');
