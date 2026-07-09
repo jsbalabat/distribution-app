@@ -264,6 +264,7 @@ private/
 *.sqlite-backup
 .local/
 local_dev/
+tools/
 
 # Generated API documentation
 doc/generated/
