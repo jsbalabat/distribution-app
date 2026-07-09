@@ -4,17 +4,13 @@ import '../utils/app_logger.dart';
 import 'auth_service.dart';
 import 'connectivity_service.dart';
 import 'firestore_service.dart';
-import 'firestore_tenant.dart';
 import 'offline_queue_repository.dart';
 import 'queue_repository.dart';
-import 'requisition_email_service.dart';
 
 typedef ConnectivityCheck = Future<bool> Function();
 typedef SessionFreshCheck = Future<bool> Function();
 typedef SessionRefresh = Future<bool> Function();
 typedef SubmitSor = Future<SubmissionResult> Function(Map<String, dynamic> payload);
-typedef SyncEmailDispatch =
-    Future<void> Function(QueuedSalesRequisition item, SubmissionResult result);
 
 class OfflineSyncReport {
   int scanned = 0;
@@ -46,13 +42,11 @@ class OfflineSyncWorker {
     SessionFreshCheck? hasFreshSession,
     SessionRefresh? refreshSession,
     SubmitSor? submitSor,
-    SyncEmailDispatch? emailDispatch,
   }) : _queueRepository = queueRepository ?? QueueRepository(),
        _connectivityCheck = connectivityCheck,
        _hasFreshSession = hasFreshSession,
        _refreshSession = refreshSession,
-       _submitSor = submitSor,
-       _emailDispatch = emailDispatch;
+       _submitSor = submitSor;
 
   static final OfflineSyncWorker instance = OfflineSyncWorker();
 
@@ -64,7 +58,6 @@ class OfflineSyncWorker {
   final SessionFreshCheck? _hasFreshSession;
   final SessionRefresh? _refreshSession;
   final SubmitSor? _submitSor;
-  final SyncEmailDispatch? _emailDispatch;
 
   bool _syncInProgress = false;
 
@@ -150,9 +143,9 @@ class OfflineSyncWorker {
           final result = await _submit(item.sorDraftPayload);
           await _queueRepository.markSyncAccepted(item.clientGeneratedId);
           report.syncedAccepted++;
-          // Best-effort: dispatch the approval email now that the server
-          // assigned a number; never let it fail an accepted sync.
-          await _dispatchApprovalEmail(item, result);
+          // The callable already dispatched the approval email server-side;
+          // reflect its outcome onto the queue without a second send.
+          await _recordEmailOutcome(item, result);
         } catch (e, st) {
           final category = _classifySyncError(e);
           final message = e.toString();
@@ -300,55 +293,48 @@ class OfflineSyncWorker {
     return _firestoreService!.submitSOR(payload);
   }
 
-  Future<void> _dispatchApprovalEmail(
+  Future<void> _recordEmailOutcome(
     QueuedSalesRequisition item,
     SubmissionResult result,
   ) async {
+    // The submit callable emails server-side; 'sent'/'skipped' are settled
+    // outcomes, anything else stays retryable via the resend path.
+    final emailSettled =
+        result.emailStatus == 'sent' || result.emailStatus == 'skipped';
     try {
-      if (_emailDispatch != null) {
-        await _emailDispatch(item, result);
-      } else {
-        // Merge the server-assigned number and remarks into the queued payload
-        // so the PDF and email match exactly what was written on upload.
-        final finalizedData = <String, dynamic>{
-          ...item.sorDraftPayload,
-          'sorNumber': result.sorNumber,
-          'sorNo': result.sorNumber,
-          if (result.remark1 != null) 'remark1': result.remark1,
-          if (result.remark2 != null) 'remark2': result.remark2,
-        };
-        await RequisitionEmailService.instance.sendAutoRoutedEmail(
-          requisitionId: result.requisitionId,
-          requisitionData: finalizedData,
-          actorDatabaseId: FirestoreTenant.instance.databaseId,
-          invocationContext: 'sync_post_accept',
-        );
-      }
-
       await _queueRepository.updateStatus(
         item.clientGeneratedId,
         newStatus: OfflineSorStatus.syncedAccepted,
-        emailStatus: OfflineSorStatus.emailSent,
+        emailStatus: emailSettled
+            ? OfflineSorStatus.emailSent
+            : OfflineSorStatus.emailFailedRetryAvailable,
+        errorCategory: emailSettled ? null : OfflineErrorCategory.email,
       );
     } catch (e, st) {
-      // The SOR is already accepted server-side; flag the email for resend
-      // rather than failing the sync.
+      // Bookkeeping only — the SOR is already accepted server-side.
       AppLogger.error(
-        'Post-sync approval email failed for ${item.clientGeneratedId}',
+        'Failed to record email outcome for ${item.clientGeneratedId}',
         error: e,
         stackTrace: st,
         tag: 'OFFLINE_SYNC',
-      );
-      await _queueRepository.updateStatus(
-        item.clientGeneratedId,
-        newStatus: OfflineSorStatus.syncedAccepted,
-        emailStatus: OfflineSorStatus.emailFailedRetryAvailable,
-        errorCategory: OfflineErrorCategory.email,
       );
     }
   }
 
   OfflineErrorCategory _classifySyncError(Object error) {
+    // The callable surfaces server rejections as a typed exception; trust its
+    // category directly instead of string-matching the message.
+    if (error is SubmissionRejectedException) {
+      switch (error.category) {
+        case SubmissionRejectionCategory.inventory:
+          return OfflineErrorCategory.inventory;
+        case SubmissionRejectionCategory.validation:
+          return OfflineErrorCategory.validation;
+        case SubmissionRejectionCategory.unknown:
+          return OfflineErrorCategory.unknown;
+      }
+    }
+
     final message = error.toString().toLowerCase();
 
     if (message.contains('inventory') ||

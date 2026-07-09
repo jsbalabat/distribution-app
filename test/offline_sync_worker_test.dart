@@ -29,14 +29,15 @@ void main() {
         _queuedSor('sor-2', status: OfflineSorStatus.pendingSync),
       ]);
 
-      var emailDispatched = false;
       final worker = OfflineSyncWorker(
         queueRepository: repo,
         connectivityCheck: () async => true,
         hasFreshSession: () async => true,
-        submitSor: (_) async =>
-            const SubmissionResult(requisitionId: 'server-id-1', sorNumber: 'HDI1-260619-001'),
-        emailDispatch: (_, _) async => emailDispatched = true,
+        submitSor: (_) async => const SubmissionResult(
+          requisitionId: 'server-id-1',
+          sorNumber: 'HDI1-260619-001',
+          emailStatus: 'sent',
+        ),
       );
 
       final report = await worker.syncPendingQueue(ignoreBackoff: true);
@@ -44,11 +45,10 @@ void main() {
       expect(report.syncedAccepted, 1);
       expect(report.scanned, 1);
       expect(repo.markedAcceptedIds, contains('sor-2'));
-      expect(emailDispatched, true);
       expect(repo.emailStatusById['sor-2'], OfflineSorStatus.emailSent);
     });
 
-    test('keeps sync accepted but flags email retry when dispatch fails', () async {
+    test('flags email retry when the callable email did not settle', () async {
       final repo = _FakeOfflineQueueRepository([
         _queuedSor('sor-8', status: OfflineSorStatus.pendingSync),
       ]);
@@ -57,9 +57,11 @@ void main() {
         queueRepository: repo,
         connectivityCheck: () async => true,
         hasFreshSession: () async => true,
-        submitSor: (_) async =>
-            const SubmissionResult(requisitionId: 'server-id-8', sorNumber: 'HDI1-260619-008'),
-        emailDispatch: (_, _) async => throw Exception('email transport down'),
+        submitSor: (_) async => const SubmissionResult(
+          requisitionId: 'server-id-8',
+          sorNumber: 'HDI1-260619-008',
+          emailStatus: 'failed',
+        ),
       );
 
       final report = await worker.syncPendingQueue(ignoreBackoff: true);

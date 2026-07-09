@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/offline_sync_contract.dart';
 import '../services/auth_service.dart';
@@ -46,6 +47,8 @@ class OfflineSubmissionService {
   final FirestoreService _firestoreService = FirestoreService();
   final QueueRepository _queueRepository = QueueRepository();
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  // The uuid package's constructor is not const, so hold a single instance.
+  final Uuid _uuidGen = Uuid();
 
   Future<OfflineSubmissionResult> submitOrQueue(
     Map<String, dynamic> formData,
@@ -99,7 +102,7 @@ class OfflineSubmissionService {
   }) async {
     await _queueRepository.initialize();
 
-    final clientGeneratedId = _resolveClientGeneratedId(formData, user.uid);
+    final clientGeneratedId = _resolveClientGeneratedId(formData);
     final correlationId = _resolveCorrelationId(formData, user.uid);
     final tenantDatabaseId = FirestoreTenant.instance.databaseId;
 
@@ -143,16 +146,15 @@ class OfflineSubmissionService {
     );
   }
 
-  String _resolveClientGeneratedId(Map<String, dynamic> formData, String uid) {
+  String _resolveClientGeneratedId(Map<String, dynamic> formData) {
     final existing = formData['clientGeneratedId']?.toString().trim();
     if (existing != null && existing.isNotEmpty) {
       return existing;
     }
 
-    final sorNumber = (formData['sorNumber'] ?? formData['sorNo'] ?? '')
-        .toString();
-    final stamp = DateTime.now().microsecondsSinceEpoch;
-    return 'offline-$uid-${sorNumber.isEmpty ? 'sor' : sorNumber}-$stamp';
+    // UUID v7 is time-ordered and the format the submit callable requires as
+    // its idempotency key / document id.
+    return _uuidGen.v7();
   }
 
   String _resolveCorrelationId(Map<String, dynamic> formData, String uid) {

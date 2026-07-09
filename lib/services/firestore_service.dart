@@ -1,7 +1,12 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
 import '../models/item_model.dart';
 import '../models/user_model.dart';
+import '../screens/generate_sales_pdf.dart';
 import 'audit_service.dart';
 import 'firestore_tenant.dart';
 import 'notification_service.dart';
@@ -18,13 +23,36 @@ class SubmissionResult {
   final String sorNumber;
   final String? remark1;
   final String? remark2;
+  // Email dispatch outcome reported by the submit callable ('sent', 'skipped',
+  // 'failed', ...); null when unknown. The offline queue mirrors it as its
+  // email substatus.
+  final String? emailStatus;
 
   const SubmissionResult({
     required this.requisitionId,
     required this.sorNumber,
     this.remark1,
     this.remark2,
+    this.emailStatus,
   });
+}
+
+/// Why the server refused a submission, mapped from the callable's
+/// rejectionCategory so callers react without string-matching.
+enum SubmissionRejectionCategory { inventory, validation, unknown }
+
+/// Thrown when submitSalesRequisition returns accepted:false. Carries the
+/// structured reasons so the form can show which items failed and the sync
+/// worker can categorize the queue outcome.
+class SubmissionRejectedException implements Exception {
+  final SubmissionRejectionCategory category;
+  final List<Map<String, dynamic>> reasons;
+  final String message;
+
+  const SubmissionRejectedException(this.category, this.reasons, this.message);
+
+  @override
+  String toString() => message;
 }
 
 /// A customer's current receivable position, used to derive credit remarks.
@@ -48,6 +76,8 @@ class AccountReceivableSnapshot {
 
 class FirestoreService {
   static const int defaultSubmissionLimit = 100;
+  // Must match submitSalesRequisition's deployed region in functions/index.js.
+  static const String _callableRegion = 'asia-southeast1';
 
   final _tenant = FirestoreTenant.instance;
   final _auth = FirebaseAuth.instance;
@@ -56,20 +86,26 @@ class FirestoreService {
 
   FirebaseFirestore get _firestore => _tenant.firestore;
 
-  // Save a new SOR form
+  // Submit an SOR through the server-authoritative callable — the sole write
+  // path: it atomically decrements itemsAvailable, writes the requisition, and
+  // dispatches the approval email server-side. Throws SubmissionRejected
+  // Exception when the server refuses (insufficient stock / bad items).
   Future<SubmissionResult> submitSOR(Map<String, dynamic> formData) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
     try {
-      // Server-authoritative: claim a unique number and recompute remarks from
-      // current receivable data, overriding whatever the client (or a stale
-      // offline draft) carried on the form.
+      // Number and remarks are still computed client-side this phase; they move
+      // into the callable when numbering/approval go server-side.
       final sorNumber = await SorNumberAllocator.instance.allocate();
       final remarks = await _evaluateRemarks(formData);
 
-      final now = Timestamp.now();
-      final normalized = {
+      // Stable idempotency key: reuse the id a queued draft already carries,
+      // otherwise mint a UUID v7 so retries and lost acks dedupe server-side.
+      final clientGeneratedId = _resolveSubmissionId(formData);
+      final correlationId = _resolveCorrelationId(formData, uid);
+
+      final finalizedData = {
         ...formData,
         'userID': formData['userID'] ?? uid,
         'uid': formData['uid'] ?? uid,
@@ -79,52 +115,82 @@ class FirestoreService {
         'remark2': remarks.remark2,
         'totalAmount': formData['totalAmount'] ?? formData['amount'] ?? 0,
         'amount': formData['amount'] ?? formData['totalAmount'] ?? 0,
-        'timeStamp': formData['timeStamp'] ?? formData['timestamp'] ?? now,
-        'timestamp': formData['timestamp'] ?? formData['timeStamp'] ?? now,
-        'createdAt': formData['createdAt'] ?? now,
       };
 
-      final docRef = await _firestore
-          .collection('salesRequisitions')
-          .add(normalized);
+      // Build the PDF from the rich map (native dates) before dates are
+      // flattened for the JSON callable boundary.
+      final pdfBytes = await generateSalesPDF(finalizedData);
+      final pdfBase64 = base64Encode(pdfBytes);
+
+      final response = await _invokeSubmitCallable(
+        clientGeneratedId: clientGeneratedId,
+        correlationId: correlationId,
+        sorPayload: _toCallableSorPayload(finalizedData),
+        pdfData: pdfBase64,
+        fileName: 'SOR-$sorNumber.pdf',
+      );
+
+      if (response['accepted'] != true) {
+        throw _rejectionFromResponse(response);
+      }
+
+      final sorId = (response['sorId'] ?? clientGeneratedId).toString();
+      final serverSorNumber = (response['sorNumber'] ?? sorNumber).toString();
+
+      // Audit + notifications remain client-side until the rules lockdown phase
+      // moves them server-side.
       await _auditService.logAction(
         action: 'create',
         entityType: 'salesRequisition',
-        entityId: docRef.id,
+        entityId: sorId,
         details: {
-          'sorNumber': sorNumber,
-          'totalAmount': normalized['totalAmount'],
-          'itemCount': (normalized['items'] as List<dynamic>? ?? []).length,
+          'sorNumber': serverSorNumber,
+          'totalAmount': finalizedData['totalAmount'],
+          'itemCount': (finalizedData['items'] as List<dynamic>? ?? []).length,
         },
       );
 
-      final customerName = (normalized['customerName'] ?? 'your requisition')
+      final customerName = (finalizedData['customerName'] ?? 'your requisition')
           .toString();
 
       await _notificationService.notifyUser(
         recipientUid: uid,
         title: 'Submission received',
-        body: 'Your requisition $sorNumber for $customerName was submitted.',
+        body:
+            'Your requisition $serverSorNumber for $customerName was submitted.',
         action: 'create',
         entityType: 'salesRequisition',
-        entityId: docRef.id,
-        details: {'sorNumber': sorNumber},
+        entityId: sorId,
+        details: {'sorNumber': serverSorNumber},
       );
 
       await _notificationService.notifyAdmins(
         title: 'New requisition submitted',
-        body: '$customerName submitted requisition $sorNumber.',
+        body: '$customerName submitted requisition $serverSorNumber.',
         action: 'create',
         entityType: 'salesRequisition',
-        entityId: docRef.id,
-        details: {'sorNumber': sorNumber, 'submittedBy': uid},
+        entityId: sorId,
+        details: {'sorNumber': serverSorNumber, 'submittedBy': uid},
       );
 
       return SubmissionResult(
-        requisitionId: docRef.id,
-        sorNumber: sorNumber,
+        requisitionId: sorId,
+        sorNumber: serverSorNumber,
         remark1: remarks.remark1,
         remark2: remarks.remark2,
+        emailStatus: response['emailStatus']?.toString(),
+      );
+    } on SubmissionRejectedException {
+      rethrow;
+    } on FirebaseFunctionsException catch (e, st) {
+      AppLogger.error(
+        'submitSalesRequisition callable failed (${e.code})',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      throw Exception(
+        ErrorMapper.mapFirestoreError(e.code, action: 'Submitting requisition'),
       );
     } on FirebaseException catch (e, st) {
       AppLogger.error(
@@ -144,6 +210,119 @@ class FirestoreService {
         tag: 'FIRESTORE',
       );
       throw Exception('Unable to submit requisition right now.');
+    }
+  }
+
+  // Single generator instance; the uuid package's constructor is not const.
+  static final Uuid _uuidGen = Uuid();
+
+  String _resolveSubmissionId(Map<String, dynamic> formData) {
+    final existing = formData['clientGeneratedId']?.toString().trim();
+    if (existing != null && existing.isNotEmpty) return existing;
+    // UUID v7 is time-ordered and the format the callable requires as its id.
+    return _uuidGen.v7();
+  }
+
+  String _resolveCorrelationId(Map<String, dynamic> formData, String uid) {
+    final existing = formData['correlationId']?.toString().trim();
+    if (existing != null && existing.isNotEmpty) return existing;
+    return 'corr-$uid-${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  Future<Map<String, dynamic>> _invokeSubmitCallable({
+    required String clientGeneratedId,
+    required String correlationId,
+    required Map<String, dynamic> sorPayload,
+    required String pdfData,
+    required String fileName,
+  }) async {
+    final callable = FirebaseFunctions.instanceFor(
+      region: _callableRegion,
+    ).httpsCallable('submitSalesRequisition');
+
+    final result = await callable.call(<String, dynamic>{
+      'clientGeneratedId': clientGeneratedId,
+      'correlationId': correlationId,
+      'actorDatabaseId': _tenant.databaseId,
+      'sorPayload': sorPayload,
+      'pdfData': pdfData,
+      'fileName': fileName,
+    });
+
+    return Map<String, dynamic>.from(result.data as Map);
+  }
+
+  // Flattens a requisition map for the JSON callable boundary: the server
+  // stamps submission-time fields, so they're dropped here, and user-chosen
+  // dates travel as epoch millis since Timestamp/DateTime can't be serialized.
+  Map<String, dynamic> _toCallableSorPayload(Map<String, dynamic> data) {
+    final payload = Map<String, dynamic>.from(data);
+    for (final key in const [
+      'timeStamp',
+      'timestamp',
+      'requestDate',
+      'createdAt',
+      'updatedAt',
+      'queuedAt',
+    ]) {
+      payload.remove(key);
+    }
+    payload['dispatchDate'] = _toEpochMillis(data['dispatchDate']);
+    payload['invoiceDate'] = _toEpochMillis(data['invoiceDate']);
+    return payload;
+  }
+
+  int? _toEpochMillis(dynamic value) {
+    if (value is Timestamp) return value.millisecondsSinceEpoch;
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    if (value is int) return value;
+    if (value is String) return DateTime.tryParse(value)?.millisecondsSinceEpoch;
+    return null;
+  }
+
+  SubmissionRejectedException _rejectionFromResponse(
+    Map<String, dynamic> response,
+  ) {
+    final categoryRaw = (response['rejectionCategory'] ?? '')
+        .toString()
+        .toLowerCase();
+    final category = categoryRaw.contains('inventory')
+        ? SubmissionRejectionCategory.inventory
+        : categoryRaw.contains('validation')
+        ? SubmissionRejectionCategory.validation
+        : SubmissionRejectionCategory.unknown;
+
+    final rawReasons = response['rejectionReasons'];
+    final reasons = <Map<String, dynamic>>[];
+    if (rawReasons is List) {
+      for (final reason in rawReasons) {
+        if (reason is Map) reasons.add(Map<String, dynamic>.from(reason));
+      }
+    }
+
+    return SubmissionRejectedException(
+      category,
+      reasons,
+      _rejectionMessage(category, reasons),
+    );
+  }
+
+  String _rejectionMessage(
+    SubmissionRejectionCategory category,
+    List<Map<String, dynamic>> reasons,
+  ) {
+    final detail = reasons
+        .map((r) => (r['message'] ?? '').toString())
+        .where((m) => m.isNotEmpty)
+        .join('\n');
+    if (detail.isNotEmpty) return detail;
+    switch (category) {
+      case SubmissionRejectionCategory.inventory:
+        return 'Some items no longer have enough stock. Please review and try again.';
+      case SubmissionRejectionCategory.validation:
+        return 'The requisition could not be validated. Please review the items.';
+      case SubmissionRejectionCategory.unknown:
+        return 'The submission was rejected. Please try again.';
     }
   }
 

@@ -18,7 +18,6 @@ import '../widgets/confirmation_dialog.dart';
 // import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
-import '../services/requisition_email_service.dart';
 
 class FormStepData {
   final String title;
@@ -67,31 +66,6 @@ class _FormScreenState extends State<FormScreen> {
 
   // ignore: unused_field
   Item? _selectedItem;
-
-  Future<void> _sendAutoRoutedEmailWithRetries({
-    required String requisitionId,
-    required Map<String, dynamic> requisitionData,
-  }) async {
-    try {
-      await RequisitionEmailService.instance.sendAutoRoutedEmail(
-        requisitionId: requisitionId,
-        requisitionData: requisitionData,
-        actorDatabaseId: FirestoreTenant.instance.databaseId,
-        invocationContext: 'form_submit',
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Requisition submitted, but auto-email failed after 3 attempts: $error',
-          ),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
 
   List<Map<String, dynamic>> _customers = [];
   final List<bool> _stepValid = [
@@ -351,33 +325,6 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
-  // Update inventory after form submission
-  Future<void> _updateInventory() async {
-    final firestoreService = FirestoreService();
-
-    for (final item in _selectedItems) {
-      final itemId = item['id'];
-      final purchasedQty = item['quantity'] ?? 0;
-
-      final itemRef = FirestoreTenant.instance.firestore
-          .collection('itemsAvailable')
-          .doc(itemId);
-      final itemSnapshot = await itemRef.get();
-
-      if (itemSnapshot.exists) {
-        final itemData = itemSnapshot.data() ?? {};
-        final currentStock =
-            (itemData['quantity'] ?? itemData['stock'] ?? 0) as num;
-        final updatedStock =
-            (currentStock.toInt() - (purchasedQty as num).toInt())
-                .clamp(0, double.infinity)
-                .toInt();
-
-        await firestoreService.updateItemStock(itemId, updatedStock);
-      }
-    }
-  }
-
   Future<void> _submitForm() async {
     try {
       setState(() {
@@ -431,6 +378,21 @@ class _FormScreenState extends State<FormScreen> {
       try {
         submissionResult = await OfflineSubmissionService.instance
             .submitOrQueue(formData);
+      } on SubmissionRejectedException catch (e) {
+        // Server refused the write (e.g. insufficient stock); show which items
+        // failed so the user can adjust and resubmit.
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() {
+          _isSubmitting = false;
+        });
+        return;
       } catch (e) {
         if (!mounted) return;
         handleError(
@@ -476,43 +438,8 @@ class _FormScreenState extends State<FormScreen> {
         return;
       }
 
-      try {
-        // Use the server-assigned number and remarks for the PDF/email; the form
-        // no longer generates them locally.
-        final finalizedData = {
-          ...formData,
-          'sorNumber': submissionResult.sorNumber,
-          'sorNo': submissionResult.sorNumber,
-          'remark1': submissionResult.remark1,
-          'remark2': submissionResult.remark2,
-        };
-        await _sendAutoRoutedEmailWithRetries(
-          requisitionId: submissionResult.requisitionId,
-          requisitionData: finalizedData,
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Auto-email process encountered an error: $e'),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-
-      try {
-        await _updateInventory();
-      } catch (e) {
-        if (!mounted) return;
-        handleError(
-          context,
-          'Form was submitted but inventory update failed: $e',
-          type: ErrorType.storage,
-        );
-        // We don't return here because the form was submitted successfully
-      }
-
+      // The submit callable already decremented inventory and dispatched the
+      // approval email server-side, so there is nothing more to do here.
       setState(() {
         _isSubmitting = false;
       });

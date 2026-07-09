@@ -1596,6 +1596,35 @@ async function appendSorEvent(tenantDb, sorId, eventType, context = {}) {
 }
 
 /**
+ * Server-authoritative date fields for a submitted requisition. Callables are
+ * JSON, so client Timestamp/DateTime can't cross the boundary: submission-time
+ * fields are stamped with the server clock, and the user-chosen dispatch/invoice
+ * dates arrive as epoch millis and are rehydrated to Timestamps.
+ * @param {object} sorPayload Validated sorPayload.
+ * @return {object} Date fields to merge over the stored document.
+ */
+function buildSubmissionDateFields(sorPayload) {
+  const serverNow = admin.firestore.FieldValue.serverTimestamp();
+  const fields = {
+    timeStamp: serverNow,
+    timestamp: serverNow,
+    requestDate: serverNow,
+    createdAt: serverNow,
+    updatedAt: serverNow,
+  };
+  for (const key of ["dispatchDate", "invoiceDate"]) {
+    const raw = sorPayload[key];
+    if (raw === null || raw === undefined) {
+      fields[key] = null;
+      continue;
+    }
+    const millis = Number(raw);
+    fields[key] = Number.isFinite(millis) ? admin.firestore.Timestamp.fromMillis(millis) : null;
+  }
+  return fields;
+}
+
+/**
  * Builds the response payload returned for an idempotent replay (the SOR
  * already exists from a prior call with the same clientGeneratedId).
  * @param {FirebaseFirestore.DocumentSnapshot} existingDoc Existing SOR snapshot.
@@ -1683,8 +1712,7 @@ exports.submitSalesRequisition = onCall(
         tenantCompanyId: tenant.companyId,
         correlationId: correlationId,
         clientGeneratedId: clientGeneratedId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...buildSubmissionDateFields(sorPayload),
       };
 
       let outcome;
