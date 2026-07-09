@@ -1,7 +1,10 @@
 // lib/screens/auth_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
+import '../services/connectivity_service.dart';
 import '../styles/app_styles.dart';
 import '../utils/app_logger.dart';
 import '../utils/login_error_message.dart';
@@ -21,9 +24,30 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLoading = false;
   String _errorMessage = '';
+  bool _isOnline = true;
+  StreamSubscription<bool>? _connectivitySub;
+
+  @override
+  void initState() {
+    super.initState();
+    _watchConnectivity();
+  }
+
+  // Sign-in needs the network (tenant lookup + Firebase Auth), so track
+  // connectivity to warn up front rather than let a doomed submit fail.
+  Future<void> _watchConnectivity() async {
+    final online = await ConnectivityService.instance.isOnline();
+    if (mounted) setState(() => _isOnline = online);
+    _connectivitySub = ConnectivityService.instance.onlineStream.listen((
+      online,
+    ) {
+      if (mounted) setState(() => _isOnline = online);
+    });
+  }
 
   @override
   void dispose() {
+    _connectivitySub?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     _companyIdentifierController.dispose();
@@ -80,6 +104,34 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  Widget _buildOfflineNotice() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppStyles.paddingSmall),
+      decoration: BoxDecoration(
+        color: AppStyles.primaryColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppStyles.borderRadiusMedium),
+        border: Border.all(
+          color: AppStyles.primaryColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.cloud_off, color: AppStyles.primaryColor, size: 20),
+          const SizedBox(width: AppStyles.spacingS),
+          Expanded(
+            child: Text(
+              'No internet connection. Connect once to sign in on this device '
+              '— after that, you can create and submit orders offline.',
+              style: TextStyle(color: AppStyles.primaryColor, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -126,6 +178,11 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
+
+                      if (!_isOnline) ...[
+                        _buildOfflineNotice(),
+                        const SizedBox(height: 16),
+                      ],
 
                       // Company identifier selector
                       TextFormField(
@@ -234,7 +291,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         width: double.infinity,
                         height: 48,
                         child: ElevatedButton(
-                          onPressed: _isLoading ? null : _submit,
+                          onPressed: (_isLoading || !_isOnline) ? null : _submit,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppStyles.primaryColor,
                             shape: RoundedRectangleBorder(
