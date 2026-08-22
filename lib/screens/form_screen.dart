@@ -343,7 +343,6 @@ class _FormScreenState extends State<FormScreen> {
         'creditLimit': _creditLimit,
         'paymentTerms': _selectedCustomer!['paymentTerms'],
         'postalAddress': _selectedCustomer!['postalAddress'],
-        'sorNumber': _sorNumber,
         'requestDate': currentDate, // Auto-set to submission time
         'dispatchDate': _dispatchDate, // Optional - can be null
         'invoiceDate': _invoiceDate, // Optional - can be null
@@ -367,7 +366,6 @@ class _FormScreenState extends State<FormScreen> {
         'createdAt': now, // Added for daily SOR counter
         // Backward-compatible aliases for legacy readers
         'amount': _calculateTotal(),
-        'sorNo': _sorNumber,
         'timestamp': now,
         'uid': FirebaseAuth.instance.currentUser?.uid,
         // 'recipientEmail': _emailController.text,

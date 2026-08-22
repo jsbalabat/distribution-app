@@ -2,6 +2,9 @@ import 'dart:typed_data';
 import 'package:pdf/widgets.dart' as pw;
 import '../utils/requisition_fields.dart';
 
+/// On-device copy used for the pre-submit preview and dashboard re-downloads.
+/// The emailed PDF is rendered by buildRequisitionPdf in functions/index.js —
+/// keep the two layouts in sync.
 Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
   final pdf = pw.Document();
 
@@ -27,6 +30,7 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
             'Item Description',
             'Item Code',
             'Quantity',
+            'Unit Price',
             'Amount (in pesos)',
           ],
           data: items.map((item) {

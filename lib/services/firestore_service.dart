@@ -1,16 +1,12 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 import '../models/item_model.dart';
 import '../models/user_model.dart';
-import '../screens/generate_sales_pdf.dart';
 import 'audit_service.dart';
 import 'firestore_tenant.dart';
 import 'notification_service.dart';
-import 'sor_number_allocator.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
 import '../utils/remark_evaluator.dart';
@@ -87,17 +83,16 @@ class FirestoreService {
   FirebaseFirestore get _firestore => _tenant.firestore;
 
   // Submit an SOR through the server-authoritative callable — the sole write
-  // path: it atomically decrements itemsAvailable, writes the requisition, and
-  // dispatches the approval email server-side. Throws SubmissionRejected
-  // Exception when the server refuses (insufficient stock / bad items).
+  // path: it allocates the SOR number, atomically decrements itemsAvailable,
+  // writes the requisition, and renders and emails the PDF server-side. Throws
+  // SubmissionRejectedException when the server refuses (stock / bad items).
   Future<SubmissionResult> submitSOR(Map<String, dynamic> formData) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception("User not authenticated");
 
     try {
-      // Number and remarks are still computed client-side this phase; they move
-      // into the callable when numbering/approval go server-side.
-      final sorNumber = await SorNumberAllocator.instance.allocate();
+      // Remarks are still computed client-side this phase; they move into the
+      // callable when approval routing goes server-side.
       final remarks = await _evaluateRemarks(formData);
 
       // Stable idempotency key: reuse the id a queued draft already carries,
@@ -109,25 +104,16 @@ class FirestoreService {
         ...formData,
         'userID': formData['userID'] ?? uid,
         'uid': formData['uid'] ?? uid,
-        'sorNumber': sorNumber,
-        'sorNo': sorNumber,
         'remark1': remarks.remark1,
         'remark2': remarks.remark2,
         'totalAmount': formData['totalAmount'] ?? formData['amount'] ?? 0,
         'amount': formData['amount'] ?? formData['totalAmount'] ?? 0,
       };
 
-      // Build the PDF from the rich map (native dates) before dates are
-      // flattened for the JSON callable boundary.
-      final pdfBytes = await generateSalesPDF(finalizedData);
-      final pdfBase64 = base64Encode(pdfBytes);
-
       final response = await _invokeSubmitCallable(
         clientGeneratedId: clientGeneratedId,
         correlationId: correlationId,
         sorPayload: _toCallableSorPayload(finalizedData),
-        pdfData: pdfBase64,
-        fileName: 'SOR-$sorNumber.pdf',
       );
 
       if (response['accepted'] != true) {
@@ -135,7 +121,10 @@ class FirestoreService {
       }
 
       final sorId = (response['sorId'] ?? clientGeneratedId).toString();
-      final serverSorNumber = (response['sorNumber'] ?? sorNumber).toString();
+      // The number exists only on the server; there is no local value to fall
+      // back to, so an absent one means the response contract broke.
+      final serverSorNumber = (response['sorNumber'] ?? clientGeneratedId)
+          .toString();
 
       // Audit + notifications remain client-side until the rules lockdown phase
       // moves them server-side.
@@ -233,8 +222,6 @@ class FirestoreService {
     required String clientGeneratedId,
     required String correlationId,
     required Map<String, dynamic> sorPayload,
-    required String pdfData,
-    required String fileName,
   }) async {
     final callable = FirebaseFunctions.instanceFor(
       region: _callableRegion,
@@ -245,8 +232,6 @@ class FirestoreService {
       'correlationId': correlationId,
       'actorDatabaseId': _tenant.databaseId,
       'sorPayload': sorPayload,
-      'pdfData': pdfData,
-      'fileName': fileName,
     });
 
     return Map<String, dynamic>.from(result.data as Map);
