@@ -329,49 +329,6 @@ class FirestoreService {
         .toList();
   }
 
-  Future<void> updateItemStock(String id, int quantity) async {
-    try {
-      final current = await _firestore
-          .collection('itemsAvailable')
-          .doc(id)
-          .get();
-      final previousQuantity =
-          (current.data()?['quantity'] ?? current.data()?['stock'] ?? 0) as num;
-
-      await _firestore.collection('itemsAvailable').doc(id).update({
-        'quantity': quantity,
-      });
-
-      await _auditService.logAction(
-        action: 'update',
-        entityType: 'inventory',
-        entityId: id,
-        details: {
-          'previousQuantity': previousQuantity.toInt(),
-          'newQuantity': quantity,
-        },
-      );
-    } on FirebaseException catch (e, st) {
-      AppLogger.error(
-        'Failed to update item stock for item: $id',
-        error: e,
-        stackTrace: st,
-        tag: 'FIRESTORE',
-      );
-      throw Exception(
-        ErrorMapper.mapFirestoreError(e.code, action: 'Updating item stock'),
-      );
-    } catch (e, st) {
-      AppLogger.error(
-        'Unexpected error while updating item stock for item: $id',
-        error: e,
-        stackTrace: st,
-        tag: 'FIRESTORE',
-      );
-      throw Exception('Unable to update stock right now.');
-    }
-  }
-
   // Stream user’s submissions
   Stream<QuerySnapshot> getUserSubmissions({
     int limit = defaultSubmissionLimit,
@@ -489,34 +446,73 @@ class FirestoreService {
     }
   }
 
-  Future<void> updateSalesRequisition(
-    String docId,
-    Map<String, dynamic> updates,
+  // Server-authoritative edit: routes item/quantity changes through the
+  // editSalesRequisition callable, which re-adjusts inventory by the signed
+  // delta, re-evaluates approval remarks against live AR, and keeps the SOR
+  // number. Throws SubmissionRejectedException when the server refuses (a stock
+  // shortfall or a vanished item).
+  Future<SubmissionResult> editSalesRequisition(
+    String sorId,
+    Map<String, dynamic> formData,
   ) async {
-    final docRef = _firestore.collection('salesRequisitions').doc(docId);
-    final snapshot = await docRef.get();
-    final data = snapshot.data() ?? <String, dynamic>{};
-    final ownerUid = (data['userID'] ?? data['uid'] ?? '').toString();
-    final sorNumber = (data['sorNumber'] ?? data['sorNo'] ?? docId).toString();
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception("User not authenticated");
 
-    await docRef.update(updates);
+    try {
+      // Per-edit id makes retries idempotent: the callable no-ops if it already
+      // applied this editId, so a lost ack can't double-adjust stock.
+      final editId = _uuidGen.v7();
+      final correlationId = _resolveCorrelationId(formData, uid);
 
-    await _auditService.logAction(
-      action: 'update',
-      entityType: 'salesRequisition',
-      entityId: docId,
-      details: {'updatedFields': updates.keys.toList()},
-    );
+      final callable = FirebaseFunctions.instanceFor(
+        region: _callableRegion,
+      ).httpsCallable('editSalesRequisition');
 
-    if (ownerUid.isNotEmpty) {
-      await _notificationService.notifyUser(
-        recipientUid: ownerUid,
-        title: 'Requisition updated',
-        body: 'Your requisition $sorNumber was updated.',
+      final result = await callable.call(<String, dynamic>{
+        'sorId': sorId,
+        'editId': editId,
+        'correlationId': correlationId,
+        'actorDatabaseId': _tenant.databaseId,
+        'sorPayload': _toCallableSorPayload(formData),
+      });
+
+      final response = Map<String, dynamic>.from(result.data as Map);
+
+      if (response['accepted'] != true) {
+        throw _rejectionFromResponse(response);
+      }
+
+      final serverSorNumber = (response['sorNumber'] ?? sorId).toString();
+
+      await _auditService.logAction(
         action: 'update',
         entityType: 'salesRequisition',
-        entityId: docId,
-        details: {'updatedFields': updates.keys.toList()},
+        entityId: sorId,
+        details: {
+          'sorNumber': serverSorNumber,
+          'itemCount': (formData['items'] as List<dynamic>? ?? []).length,
+          'totalAmount': formData['totalAmount'] ?? formData['amount'],
+        },
+      );
+
+      return SubmissionResult(
+        requisitionId: sorId,
+        sorNumber: serverSorNumber,
+        remark1: response['remark1']?.toString(),
+        remark2: response['remark2']?.toString(),
+        emailStatus: response['emailStatus']?.toString(),
+      );
+    } on SubmissionRejectedException {
+      rethrow;
+    } on FirebaseFunctionsException catch (e, st) {
+      AppLogger.error(
+        'editSalesRequisition callable failed (${e.code})',
+        error: e,
+        stackTrace: st,
+        tag: 'FIRESTORE',
+      );
+      throw Exception(
+        ErrorMapper.mapFirestoreError(e.code, action: 'Editing requisition'),
       );
     }
   }

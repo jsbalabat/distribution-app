@@ -503,13 +503,14 @@ class _EditRequisitionScreenState extends State<EditRequisitionScreen> {
           });
 
           try {
-            // Update the data in Firestore
-            await _firestoreService.updateSalesRequisition(widget.docId, {
+            // Route the edit through the server-authoritative callable: it
+            // re-adjusts inventory by the delta and re-evaluates approval before
+            // persisting. Throws on a stock shortfall, surfaced by the catch below.
+            await _firestoreService.editSalesRequisition(widget.docId, {
               'items': _items,
               'totalAmount': _calculateTotal(),
               'invoiceDate': _invoiceDate,
               'dispatchDate': _dispatchDate,
-              'lastEdited': Timestamp.now(),
             });
 
             // Use a new context check after the async gap

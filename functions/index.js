@@ -1545,6 +1545,44 @@ async function loadCallerProfile(callerUid, tenantDb) {
 }
 
 /**
+ * Validates a raw items array and normalizes each line to
+ * {id, code, name, quantity, unitPrice, subtotal}. Shared by the submit and edit
+ * callables. Throws HttpsError("invalid-argument") on any structural problem.
+ * @param {unknown} rawItems Candidate items array from a sorPayload.
+ * @return {Array<{id: string, code: string, name: string, quantity: number, unitPrice: number, subtotal: number}>}
+ */
+function normalizeLineItems(rawItems) {
+  const items = Array.isArray(rawItems) ? rawItems : [];
+  if (items.length === 0) {
+    throw new HttpsError("invalid-argument", "sorPayload.items must contain at least one line item.");
+  }
+  return items.map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new HttpsError("invalid-argument", `sorPayload.items[${index}] must be an object.`);
+    }
+    const id = (item.id || "").toString().trim();
+    const code = (item.code || "").toString().trim();
+    if (!id && !code) {
+      throw new HttpsError("invalid-argument", `sorPayload.items[${index}] must include id or code.`);
+    }
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new HttpsError("invalid-argument", `sorPayload.items[${index}].quantity must be a positive number.`);
+    }
+    const unitPrice = Number(item.unitPrice);
+    const subtotal = Number(item.subtotal);
+    return {
+      id: id,
+      code: code,
+      name: (item.name || "").toString(),
+      quantity: quantity,
+      unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
+      subtotal: Number.isFinite(subtotal) ? subtotal : 0,
+    };
+  });
+}
+
+/**
  * Validates and normalizes the inbound submitSalesRequisition payload.
  * Throws HttpsError("invalid-argument") on any structural problem.
  * @param {unknown} data Raw request data.
@@ -1576,35 +1614,7 @@ function validateSubmitRequisitionPayload(data) {
     throw new HttpsError("invalid-argument", "sorPayload must be an object.");
   }
 
-  const rawItems = Array.isArray(sorPayload.items) ? sorPayload.items : [];
-  if (rawItems.length === 0) {
-    throw new HttpsError("invalid-argument", "sorPayload.items must contain at least one line item.");
-  }
-
-  const lineItems = rawItems.map((item, index) => {
-    if (!item || typeof item !== "object") {
-      throw new HttpsError("invalid-argument", `sorPayload.items[${index}] must be an object.`);
-    }
-    const id = (item.id || "").toString().trim();
-    const code = (item.code || "").toString().trim();
-    if (!id && !code) {
-      throw new HttpsError("invalid-argument", `sorPayload.items[${index}] must include id or code.`);
-    }
-    const quantity = Number(item.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      throw new HttpsError("invalid-argument", `sorPayload.items[${index}].quantity must be a positive number.`);
-    }
-    const unitPrice = Number(item.unitPrice);
-    const subtotal = Number(item.subtotal);
-    return {
-      id: id,
-      code: code,
-      name: (item.name || "").toString(),
-      quantity: quantity,
-      unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
-      subtotal: Number.isFinite(subtotal) ? subtotal : 0,
-    };
-  });
+  const lineItems = normalizeLineItems(sorPayload.items);
 
   return {clientGeneratedId, correlationId, sorPayload, lineItems};
 }
@@ -2148,6 +2158,342 @@ exports.submitSalesRequisition = onCall(
         emailMessageId: dispatchResult.messageId,
         idempotentReplay: false,
         correlationId: correlationId,
+      };
+    },
+);
+
+// ========================================
+// SOR EDIT (server-authoritative inventory delta)
+// ========================================
+
+/**
+ * Validates the inbound editSalesRequisition payload. Keys on the existing sorId
+ * plus a per-edit editId (for idempotent retries) and reuses the shared line-item
+ * normalizer. Throws HttpsError("invalid-argument") on any structural problem.
+ * @param {unknown} data Raw request data.
+ * @return {{sorId: string, editId: string, correlationId: string, sorPayload: object,
+ *   lineItems: Array<{id: string, code: string, name: string, quantity: number,
+ *   unitPrice: number, subtotal: number}>}}
+ */
+function validateEditRequisitionPayload(data) {
+  if (!data || typeof data !== "object") {
+    throw new HttpsError("invalid-argument", "Request payload is required.");
+  }
+  const sorId = (data.sorId || "").toString().trim();
+  if (!isValidRequisitionUuid(sorId)) {
+    throw new HttpsError("invalid-argument", "sorId must be a valid requisition id (UUID v7).");
+  }
+  const editId = (data.editId || "").toString().trim();
+  if (!isValidRequisitionUuid(editId)) {
+    throw new HttpsError("invalid-argument", "editId must be a valid UUID (v7 expected).");
+  }
+  const correlationId = (data.correlationId || "").toString().trim();
+  if (!correlationId) {
+    throw new HttpsError("invalid-argument", "correlationId is required.");
+  }
+  const sorPayload = data.sorPayload;
+  if (!sorPayload || typeof sorPayload !== "object" || Array.isArray(sorPayload)) {
+    throw new HttpsError("invalid-argument", "sorPayload must be an object.");
+  }
+  const lineItems = normalizeLineItems(sorPayload.items);
+  return {sorId, editId, correlationId, sorPayload, lineItems};
+}
+
+/**
+ * Response for an edit already applied (same editId). Mirrors a fresh accepted
+ * edit so the client can treat replays uniformly.
+ * @param {FirebaseFirestore.DocumentSnapshot} snap Current SOR snapshot.
+ * @return {object}
+ */
+function buildEditReplayResponse(snap) {
+  const data = snap.data() || {};
+  return {
+    accepted: data.status === "accepted",
+    sorId: snap.id,
+    sorNumber: (data.sorNumber || data.sorNo || snap.id).toString(),
+    remark1: data.remark1 || null,
+    remark2: data.remark2 || null,
+    emailStatus: (data.emailStatus || data.autoEmailStatus || "unknown").toString(),
+    idempotentReplay: true,
+    correlationId: (data.correlationId || "").toString(),
+  };
+}
+
+exports.editSalesRequisition = onCall(
+    {
+      region: CALLABLE_REGION,
+      timeoutSeconds: 60,
+      memory: "256MiB",
+    },
+    async (request) => {
+      if (!request.auth) {
+        console.warn("[SOR-EDIT] Rejected unauthenticated request");
+        throw new HttpsError("unauthenticated", "User must be authenticated to edit a sales requisition.");
+      }
+
+      const callerUid = request.auth.uid;
+      const validated = validateEditRequisitionPayload(request.data);
+      const {sorId, editId, correlationId, sorPayload, lineItems} = validated;
+
+      const tenant = await resolveTenantForCallable(request.data, callerUid);
+      const tenantDb = getTenantDb(tenant.databaseId);
+
+      console.log(
+          `[SOR-EDIT] Request: sor=${sorId} editId=${editId} correlationId=${correlationId} ` +
+          `callerUid=${callerUid} tenant=${tenant.companyId}/${tenant.databaseId} lineItems=${lineItems.length}`,
+      );
+
+      const callerProfile = await loadCallerProfile(callerUid, tenantDb);
+      if (!callerProfile.exists) {
+        console.warn(`[SOR-EDIT] Caller ${callerUid} not registered in tenant ${tenant.databaseId}`);
+        throw new HttpsError("permission-denied", "Caller does not belong to the requested tenant.");
+      }
+      const isAdminCaller = callerProfile.role === "admin";
+
+      const sorRef = tenantDb.collection("salesRequisitions").doc(sorId);
+      const preSnap = await sorRef.get();
+      if (!preSnap.exists) {
+        throw new HttpsError("not-found", "Sales requisition not found.");
+      }
+      const preData = preSnap.data() || {};
+      const resolvedSorNumber = (preData.sorNumber || preData.sorNo || sorId).toString();
+
+      // Only the owner or an admin may edit — mirrors the pre-lockdown rule now
+      // that the client can no longer write the doc directly.
+      const ownerUid = (preData.userID || preData.uid || "").toString();
+      if (!isAdminCaller && ownerUid !== callerUid) {
+        throw new HttpsError("permission-denied", "You can only edit your own requisitions.");
+      }
+      if (preData.status !== "accepted") {
+        throw new HttpsError("failed-precondition", "Only an accepted requisition can be edited.");
+      }
+      if (preData.isDeleted === true) {
+        throw new HttpsError("failed-precondition", "An archived requisition cannot be edited.");
+      }
+      if ((preData.lastEditId || "") === editId) {
+        console.log(`[SOR-EDIT] Idempotent replay (pre-check) sor=${sorId} editId=${editId}`);
+        return buildEditReplayResponse(preSnap);
+      }
+
+      // Resolve refs for every NEW item up front — queries can't run in a txn.
+      const resolvedNew = [];
+      const unresolvedReasons = [];
+      for (let i = 0; i < lineItems.length; i++) {
+        const ref = await resolveItemRef(tenantDb, lineItems[i]);
+        if (!ref) {
+          unresolvedReasons.push({
+            lineIndex: i,
+            itemId: lineItems[i].id,
+            itemCode: lineItems[i].code,
+            itemName: lineItems[i].name,
+            code: "ITEM_NOT_FOUND",
+            message: `Item not found: code=${lineItems[i].code || "(none)"} id=${lineItems[i].id || "(none)"}`,
+          });
+        } else {
+          resolvedNew.push({lineItem: lineItems[i], ref});
+        }
+      }
+
+      const actor = {uid: callerUid, role: callerProfile.role};
+
+      if (unresolvedReasons.length > 0) {
+        await appendSorEvent(tenantDb, sorId, "sor_edit_rejected_validation", {
+          actor, details: {reasons: unresolvedReasons}, correlationId,
+        });
+        console.warn(`[SOR-EDIT] Validation rejection sor=${sorId}: ${unresolvedReasons.length} unresolved`);
+        return {
+          accepted: false,
+          sorId,
+          sorNumber: resolvedSorNumber,
+          rejectionCategory: SOR_REJECTION_CATEGORIES.VALIDATION,
+          rejectionReasons: unresolvedReasons,
+          idempotentReplay: false,
+          correlationId,
+        };
+      }
+
+      // Recompute remarks/route from live receivable data with the NEW order total
+      // (same rule as submit), so an edit that crosses the credit limit re-routes.
+      const orderTotal = Number(sorPayload.totalAmount ?? sorPayload.amount) || 0;
+      const creditLimit = Number(sorPayload.creditLimit ?? preData.creditLimit) || 0;
+      const accountNumber = (sorPayload.accountNumber ?? preData.accountNumber ?? "").toString();
+      const receivable = await fetchReceivablePosition(tenantDb, accountNumber);
+      const serverRemarks = evaluateRequisitionRemarks({
+        creditLimit,
+        amountDue: receivable.amountDue,
+        over30Days: receivable.over30Days,
+        unsecured: receivable.unsecured,
+        orderTotal,
+      });
+      console.log(
+          `[SOR-EDIT] Remark eval sor=${sorId} accountKey="${receivable.key}" arFound=${receivable.found} ` +
+          `amountDue=${receivable.amountDue} over30=${receivable.over30Days} unsecured=${receivable.unsecured} ` +
+          `creditLimit=${creditLimit} orderTotal=${orderTotal} remark1=${serverRemarks.remark1 || "none"} remark2=${serverRemarks.remark2 || "none"}`,
+      );
+
+      let outcome;
+      try {
+        outcome = await tenantDb.runTransaction(async (txn) => {
+          const snap = await txn.get(sorRef);
+          if (!snap.exists) return {kind: "not_found"};
+          const data = snap.data() || {};
+          if ((data.lastEditId || "") === editId) return {kind: "idempotent", snap};
+          if (data.status !== "accepted" || data.isDeleted === true) return {kind: "conflict"};
+
+          // Signed stock delta per itemsAvailable doc, computed from the CURRENT
+          // persisted items so a concurrent edit can't corrupt the math: new
+          // consumption minus what this SOR already consumed. Negative = return.
+          const deltaById = new Map();
+          const nameById = new Map();
+          const refById = new Map();
+          const currentItems = Array.isArray(data.items) ? data.items : [];
+          for (const it of currentItems) {
+            const id = (it.id || "").toString().trim();
+            const qty = Number(it.quantity) || 0;
+            if (!id || qty <= 0) continue;
+            deltaById.set(id, (deltaById.get(id) || 0) - qty);
+            nameById.set(id, (it.name || "").toString());
+          }
+          for (const e of resolvedNew) {
+            const id = e.ref.id;
+            deltaById.set(id, (deltaById.get(id) || 0) + e.lineItem.quantity);
+            refById.set(id, e.ref);
+            nameById.set(id, e.lineItem.name || nameById.get(id) || "");
+          }
+          for (const id of deltaById.keys()) {
+            if (!refById.has(id)) {
+              refById.set(id, tenantDb.collection("itemsAvailable").doc(id));
+            }
+          }
+
+          const affected = [...deltaById.entries()].filter(([, d]) => d !== 0);
+          const stockSnaps = await Promise.all(affected.map(([id]) => txn.get(refById.get(id))));
+
+          const inventoryRejections = [];
+          const mutations = [];
+          for (let i = 0; i < affected.length; i++) {
+            const [id, delta] = affected[i];
+            const s = stockSnaps[i];
+            const itemName = nameById.get(id) || id;
+            if (!s.exists) {
+              // A vanished item can't be credited; only a net increase is fatal.
+              if (delta > 0) {
+                inventoryRejections.push({
+                  itemId: id, itemName, code: "ITEM_VANISHED",
+                  message: `Item no longer exists: ${itemName}`,
+                });
+              }
+              continue;
+            }
+            const itemData = s.data() || {};
+            const availableRaw = itemData.quantity !== undefined ? itemData.quantity : itemData.stock;
+            const available = Number(availableRaw);
+            if (!Number.isFinite(available)) {
+              inventoryRejections.push({
+                itemId: id, itemName, code: "INVALID_STOCK",
+                message: `Item ${itemName} has no readable stock.`,
+              });
+              continue;
+            }
+            const newStock = available - delta;
+            if (newStock < 0) {
+              inventoryRejections.push({
+                itemId: id, itemName, code: "INSUFFICIENT_STOCK",
+                requested: delta, available,
+                message: `Insufficient stock for ${itemName}: needs ${delta} more, ${available} available.`,
+              });
+              continue;
+            }
+            mutations.push({ref: refById.get(id), newStock});
+          }
+
+          if (inventoryRejections.length > 0) {
+            return {kind: "inventory_rejected", reasons: inventoryRejections};
+          }
+
+          const serverNow = admin.firestore.FieldValue.serverTimestamp();
+          for (const m of mutations) {
+            txn.update(m.ref, {quantity: m.newStock, updatedAt: serverNow});
+          }
+
+          const dateFields = {};
+          for (const key of ["dispatchDate", "invoiceDate"]) {
+            const raw = sorPayload[key];
+            if (raw === null || raw === undefined) {
+              dateFields[key] = null;
+              continue;
+            }
+            const millis = Number(raw);
+            dateFields[key] = Number.isFinite(millis) ? admin.firestore.Timestamp.fromMillis(millis) : null;
+          }
+
+          // Keep sorNumber and status; the edit only touches items, totals, dates
+          // and the recomputed remarks.
+          txn.update(sorRef, {
+            items: lineItems,
+            totalAmount: orderTotal,
+            amount: orderTotal,
+            remark1: serverRemarks.remark1,
+            remark2: serverRemarks.remark2,
+            ...dateFields,
+            lastEditId: editId,
+            lastEditedBy: callerUid,
+            lastEditedAt: serverNow,
+            updatedAt: serverNow,
+          });
+
+          return {kind: "accepted"};
+        });
+      } catch (error) {
+        console.error(`[SOR-EDIT] Transaction failed for sor=${sorId}:`, error);
+        throw new HttpsError("internal", "Edit transaction failed; please retry.");
+      }
+
+      if (outcome.kind === "not_found") {
+        throw new HttpsError("not-found", "Sales requisition not found.");
+      }
+      if (outcome.kind === "conflict") {
+        throw new HttpsError("failed-precondition", "Requisition is no longer editable.");
+      }
+      if (outcome.kind === "idempotent") {
+        console.log(`[SOR-EDIT] Idempotent replay (in-txn) sor=${sorId}`);
+        return buildEditReplayResponse(outcome.snap);
+      }
+      if (outcome.kind === "inventory_rejected") {
+        await appendSorEvent(tenantDb, sorId, "sor_edit_rejected_inventory", {
+          actor, details: {reasons: outcome.reasons}, correlationId,
+        });
+        console.warn(`[SOR-EDIT] Inventory rejection sor=${sorId}: ${outcome.reasons.length} lines short`);
+        return {
+          accepted: false,
+          sorId,
+          sorNumber: resolvedSorNumber,
+          rejectionCategory: SOR_REJECTION_CATEGORIES.INVENTORY,
+          rejectionReasons: outcome.reasons,
+          idempotentReplay: false,
+          correlationId,
+        };
+      }
+
+      await appendSorEvent(tenantDb, sorId, "sor_edited", {
+        actor,
+        details: {itemCount: lineItems.length, totalAmount: orderTotal},
+        correlationId,
+      });
+      console.log(
+          `[SOR-EDIT] Accepted sor=${sorId} sorNumber=${resolvedSorNumber} ` +
+          `tenant=${tenant.companyId}/${tenant.databaseId}`,
+      );
+
+      return {
+        accepted: true,
+        sorId,
+        sorNumber: resolvedSorNumber,
+        remark1: serverRemarks.remark1,
+        remark2: serverRemarks.remark2,
+        emailStatus: (preData.emailStatus || "unknown").toString(),
+        idempotentReplay: false,
+        correlationId,
       };
     },
 );
