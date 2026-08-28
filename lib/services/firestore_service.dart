@@ -9,7 +9,6 @@ import 'firestore_tenant.dart';
 import 'notification_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_mapper.dart';
-import '../utils/remark_evaluator.dart';
 
 /// Outcome of writing a requisition: the new doc id plus the server-assigned SOR
 /// number and the remarks computed at write time, so callers can use them for the
@@ -51,25 +50,6 @@ class SubmissionRejectedException implements Exception {
   String toString() => message;
 }
 
-/// A customer's current receivable position, used to derive credit remarks.
-class AccountReceivableSnapshot {
-  final double amountDue;
-  final double over30Days;
-  final double unsecuredFunds;
-
-  const AccountReceivableSnapshot({
-    required this.amountDue,
-    required this.over30Days,
-    required this.unsecuredFunds,
-  });
-
-  static const AccountReceivableSnapshot empty = AccountReceivableSnapshot(
-    amountDue: 0,
-    over30Days: 0,
-    unsecuredFunds: 0,
-  );
-}
-
 class FirestoreService {
   static const int defaultSubmissionLimit = 100;
   // Must match submitSalesRequisition's deployed region in functions/index.js.
@@ -91,21 +71,18 @@ class FirestoreService {
     if (uid == null) throw Exception("User not authenticated");
 
     try {
-      // Remarks are still computed client-side this phase; they move into the
-      // callable when approval routing goes server-side.
-      final remarks = await _evaluateRemarks(formData);
-
       // Stable idempotency key: reuse the id a queued draft already carries,
       // otherwise mint a UUID v7 so retries and lost acks dedupe server-side.
       final clientGeneratedId = _resolveSubmissionId(formData);
       final correlationId = _resolveCorrelationId(formData, uid);
 
+      // Remarks and approval routing are decided server-side in the callable
+      // against live receivable data; the client neither computes nor sends
+      // them and reads the authoritative values back off the response.
       final finalizedData = {
         ...formData,
         'userID': formData['userID'] ?? uid,
         'uid': formData['uid'] ?? uid,
-        'remark1': remarks.remark1,
-        'remark2': remarks.remark2,
         'totalAmount': formData['totalAmount'] ?? formData['amount'] ?? 0,
         'amount': formData['amount'] ?? formData['totalAmount'] ?? 0,
       };
@@ -165,8 +142,8 @@ class FirestoreService {
       return SubmissionResult(
         requisitionId: sorId,
         sorNumber: serverSorNumber,
-        remark1: remarks.remark1,
-        remark2: remarks.remark2,
+        remark1: response['remark1']?.toString(),
+        remark2: response['remark2']?.toString(),
         emailStatus: response['emailStatus']?.toString(),
       );
     } on SubmissionRejectedException {
@@ -249,6 +226,9 @@ class FirestoreService {
       'createdAt',
       'updatedAt',
       'queuedAt',
+      // Remarks are recomputed server-side; never let a client value ride along.
+      'remark1',
+      'remark2',
     ]) {
       payload.remove(key);
     }
@@ -309,52 +289,6 @@ class FirestoreService {
       case SubmissionRejectionCategory.unknown:
         return 'The submission was rejected. Please try again.';
     }
-  }
-
-  /// Reads a customer's receivable position. An absent record is a legitimate
-  /// "no balance" (empty); a read failure propagates so we never silently
-  /// under-flag credit on a transient error.
-  Future<AccountReceivableSnapshot> fetchAccountReceivable(
-    String accountNumber,
-  ) async {
-    if (accountNumber.isEmpty) {
-      return AccountReceivableSnapshot.empty;
-    }
-
-    final snapshot = await _firestore
-        .collection('accountReceivable')
-        .where('accountNumber', isEqualTo: accountNumber)
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isEmpty) {
-      return AccountReceivableSnapshot.empty;
-    }
-
-    final data = snapshot.docs.first.data();
-    return AccountReceivableSnapshot(
-      amountDue: (data['amountDue'] ?? 0).toDouble(),
-      over30Days: (data['overThirtyDays'] ?? 0).toDouble(),
-      unsecuredFunds: (data['unsecured'] ?? 0).toDouble(),
-    );
-  }
-
-  Future<RemarkEvaluation> _evaluateRemarks(
-    Map<String, dynamic> formData,
-  ) async {
-    final accountNumber = (formData['accountNumber'] ?? '').toString();
-    final creditLimit = (formData['creditLimit'] as num?)?.toDouble() ?? 0;
-    final orderTotal =
-        ((formData['totalAmount'] ?? formData['amount'] ?? 0) as num).toDouble();
-
-    final receivable = await fetchAccountReceivable(accountNumber);
-    return RemarkEvaluator.evaluate(
-      creditLimit: creditLimit,
-      amountDue: receivable.amountDue,
-      over30Days: receivable.over30Days,
-      unsecuredFunds: receivable.unsecuredFunds,
-      orderTotal: orderTotal,
-    );
   }
 
   Future<Map<String, dynamic>?> fetchItemPrice(String itemCode) async {

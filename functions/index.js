@@ -11,13 +11,27 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const nodemailer = require("nodemailer");
+const PdfPrinter = require("pdfmake");
 
 admin.initializeApp();
 const db = getFirestore();
 const storage = new Storage();
 
+// Standard-14 fonts render without shipping any font files: pdfmake maps these
+// style names straight to pdfkit's built-in Helvetica metrics.
+const pdfPrinter = new PdfPrinter({
+  Helvetica: {
+    normal: "Helvetica",
+    bold: "Helvetica-Bold",
+    italics: "Helvetica-Oblique",
+    bolditalics: "Helvetica-BoldOblique",
+  },
+});
+
 const DEFAULT_DATABASE_ID = "(default)";
 const CALLABLE_REGION = "asia-southeast1";
+// Company SOR prefix, e.g. "HDI1-260619-001"; currently identical across tenants.
+const SOR_NUMBER_PREFIX = "HDI1";
 const MAX_AUTO_EMAIL_RETRIES = 3;
 const ROLLBACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 const ROLLBACK_MIN_EMAIL_ATTEMPTS = 2;
@@ -762,6 +776,59 @@ function evaluateApprovalRoute(requisitionData) {
 }
 
 /**
+ * Reads a customer's receivable position from live tenant data. A missing record
+ * or blank key yields a zeroed position (treated as "no balance"). The account
+ * key is trimmed on lookup so a stray space on either the customer or receivable
+ * record can't silently miss the join and under-flag credit.
+ * @param {FirebaseFirestore.Firestore} tenantDb Tenant database handle.
+ * @param {string} accountNumber Customer account number to match.
+ * @return {Promise<{found: boolean, amountDue: number, over30Days: number,
+ *   unsecured: number, key: string}>}
+ */
+async function fetchReceivablePosition(tenantDb, accountNumber) {
+  const key = (accountNumber || "").toString().trim();
+  const empty = {found: false, amountDue: 0, over30Days: 0, unsecured: 0, key};
+  if (!key) return empty;
+
+  const snap = await tenantDb
+      .collection("accountReceivable")
+      .where("accountNumber", "==", key)
+      .limit(1)
+      .get();
+  if (snap.empty) return empty;
+
+  const data = snap.docs[0].data() || {};
+  return {
+    found: true,
+    amountDue: Number(data.amountDue) || 0,
+    over30Days: Number(data.overThirtyDays) || 0,
+    unsecured: Number(data.unsecured) || 0,
+    key,
+  };
+}
+
+/**
+ * Derives the two credit-control remarks from a receivable position and order
+ * total. Mirrors the client RemarkEvaluator so behaviour is identical, but runs
+ * server-authoritatively against live data at submit/sync time.
+ * @param {object} params Credit inputs.
+ * @return {{remark1: (string|null), remark2: (string|null)}}
+ */
+function evaluateRequisitionRemarks(params) {
+  const creditLimit = Number(params.creditLimit) || 0;
+  const amountDue = Number(params.amountDue) || 0;
+  const over30Days = Number(params.over30Days) || 0;
+  const unsecured = Number(params.unsecured) || 0;
+  const orderTotal = Number(params.orderTotal) || 0;
+
+  const projectedDue = amountDue + orderTotal;
+  return {
+    remark1: projectedDue > creditLimit ? "OCL" : null,
+    remark2: over30Days > 0 || unsecured > 0 ? "Past Due / Unsecured" : null,
+  };
+}
+
+/**
  * Builds placeholder email content for auto-routing notifications.
  * @param {object} params Template parameters.
  * @return {{subject: string, html: string}}
@@ -1485,10 +1552,9 @@ async function loadCallerProfile(callerUid, tenantDb) {
  *   clientGeneratedId: string,
  *   correlationId: string,
  *   sorPayload: object,
- *   pdfData: string,
- *   fileName: string,
  *   lineItems: Array<{id: string, code: string, name: string, quantity: number, unitPrice: number, subtotal: number}>,
- * }} Validated payload.
+ * }} Validated payload. Any client-sent pdfData/fileName is ignored — the server
+ * renders the authoritative PDF once it owns the SOR number.
  */
 function validateSubmitRequisitionPayload(data) {
   if (!data || typeof data !== "object") {
@@ -1540,10 +1606,7 @@ function validateSubmitRequisitionPayload(data) {
     };
   });
 
-  const pdfData = (data.pdfData || "").toString();
-  const fileName = (data.fileName || `SOR-${clientGeneratedId}.pdf`).toString().trim();
-
-  return {clientGeneratedId, correlationId, sorPayload, pdfData, fileName, lineItems};
+  return {clientGeneratedId, correlationId, sorPayload, lineItems};
 }
 
 /**
@@ -1637,12 +1700,123 @@ function buildIdempotentReplayResponse(existingDoc) {
     accepted: accepted,
     sorId: existingDoc.id,
     sorNumber: (data.sorNumber || data.sorNo || existingDoc.id).toString(),
+    remark1: data.remark1 || null,
+    remark2: data.remark2 || null,
     emailStatus: (data.emailStatus || data.autoEmailStatus || "unknown").toString(),
     rejectionCategory: data.rejectionCategory || null,
     rejectionReasons: Array.isArray(data.rejectionReasons) ? data.rejectionReasons : [],
     idempotentReplay: true,
     correlationId: (data.correlationId || "").toString(),
   };
+}
+
+/**
+ * Extracts the Philippine-business-day date parts for [date]. Cloud Functions run
+ * in UTC, but an SOR number and its printed date must reflect the Manila day the
+ * order was placed, so parts are derived in Asia/Manila (which observes no DST).
+ * @param {Date} date Absolute submission instant.
+ * @return {{yy: string, mm: string, dd: string, year: string}} Zero-padded parts.
+ */
+function manilaDateParts(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = (type) => parts.find((p) => p.type === type).value;
+  const year = lookup("year");
+  return {yy: year.slice(-2), mm: lookup("month"), dd: lookup("day"), year};
+}
+
+/**
+ * Formats the human-facing SOR number, e.g. "HDI1-260619-001".
+ * @param {string} prefix Company SOR prefix.
+ * @param {Date} date Submission instant (day derived in Manila tz).
+ * @param {number} sequence 1-based daily counter value.
+ * @return {string} Formatted SOR number.
+ */
+function formatSorNumber(prefix, date, sequence) {
+  const {yy, mm, dd} = manilaDateParts(date);
+  return `${prefix}-${yy}${mm}${dd}-${String(sequence).padStart(3, "0")}`;
+}
+
+/**
+ * Counter document id for [date]'s Manila day, e.g. "HDI1-260619". One document
+ * per (prefix, day) holds the atomic daily sequence.
+ * @param {string} prefix Company SOR prefix.
+ * @param {Date} date Submission instant.
+ * @return {string} Counter doc id.
+ */
+function sorCounterDocId(prefix, date) {
+  const {yy, mm, dd} = manilaDateParts(date);
+  return `${prefix}-${yy}${mm}${dd}`;
+}
+
+/**
+ * Renders the requisition invoice PDF server-side so the authoritative SOR number
+ * (assigned inside the submit transaction) is the one printed. Mirrors the client
+ * preview layout in lib/screens/generate_sales_pdf.dart — keep the two in sync.
+ * @param {object} sorData Finalized requisition data including the assigned sorNumber.
+ * @param {Date} submissionDate Server submission instant, printed as the SOR date.
+ * @return {Promise<Buffer>} Rendered PDF bytes.
+ */
+function buildRequisitionPdf(sorData, submissionDate) {
+  const items = Array.isArray(sorData.items) ? sorData.items : [];
+  const accountNumber = (sorData.accountNumber || "").toString();
+  const totalAmount = Number(sorData.totalAmount || sorData.amount || 0);
+  const {mm, dd, year} = manilaDateParts(submissionDate);
+  const dateStr = `${year}-${mm}-${dd}`;
+
+  const itemRows = items.map((item) => {
+    const quantity = Number(item.quantity || 0);
+    const unitPrice = Number(item.unitPrice || 0);
+    const subtotal = quantity * unitPrice;
+    return [
+      (item.name || "").toString(),
+      (item.code || "").toString(),
+      quantity.toFixed(2),
+      unitPrice.toFixed(2),
+      subtotal.toFixed(2),
+    ];
+  });
+
+  const docDefinition = {
+    defaultStyle: {font: "Helvetica", fontSize: 11},
+    content: [
+      {text: "Sales Requisition", fontSize: 20, bold: true, margin: [0, 0, 0, 10]},
+      {text: `SOR #: ${sorData.sorNumber || sorData.sorNo || "N/A"}`},
+      {text: `Customer: ${sorData.customerName || ""}`},
+      {text: `Account #: ${accountNumber}`},
+      {text: `Date: ${dateStr}`},
+      {text: `Sender: ${accountNumber}`, margin: [0, 0, 0, 20]},
+      {
+        table: {
+          headerRows: 1,
+          widths: ["*", "auto", "auto", "auto", "auto"],
+          body: [
+            ["Item Description", "Item Code", "Quantity", "Unit Price", "Amount (in pesos)"],
+            ...itemRows,
+          ],
+        },
+      },
+      {text: `Remarks: ${sorData.remarks || "No remarks"}`, margin: [0, 10, 0, 10]},
+      {
+        text: `Total Amount (in pesos): ${totalAmount.toFixed(2)}`,
+        fontSize: 16,
+        bold: true,
+      },
+    ],
+  };
+
+  const pdfDoc = pdfPrinter.createPdfKitDocument(docDefinition);
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    pdfDoc.on("data", (chunk) => chunks.push(chunk));
+    pdfDoc.on("end", () => resolve(Buffer.concat(chunks)));
+    pdfDoc.on("error", reject);
+    pdfDoc.end();
+  });
 }
 
 exports.submitSalesRequisition = onCall(
@@ -1676,6 +1850,10 @@ exports.submitSalesRequisition = onCall(
       }
 
       const sorRef = tenantDb.collection("salesRequisitions").doc(clientGeneratedId);
+      // Number and printed date come from the server clock, keyed to the Manila
+      // business day, so the client can neither pick nor influence them.
+      const submissionDate = new Date();
+      const counterRef = tenantDb.collection("counters").doc(sorCounterDocId(SOR_NUMBER_PREFIX, submissionDate));
 
       // Cheap idempotency pre-check (avoids spinning a transaction on the common replay case).
       const preCheckSnap = await sorRef.get();
@@ -1704,9 +1882,33 @@ exports.submitSalesRequisition = onCall(
         }
       }
 
-      const sorNumberOut = (sorPayload.sorNumber || sorPayload.sorNo || clientGeneratedId).toString();
+      // Credit-control remarks are computed here, server-side, from live
+      // receivable data — never trusted from the client — so approval routing
+      // can't be bypassed by a stale offline snapshot or a tampered payload.
+      const orderTotal = Number(sorPayload.totalAmount ?? sorPayload.amount) || 0;
+      const receivable = await fetchReceivablePosition(tenantDb, sorPayload.accountNumber);
+      const serverRemarks = evaluateRequisitionRemarks({
+        creditLimit: sorPayload.creditLimit,
+        amountDue: receivable.amountDue,
+        over30Days: receivable.over30Days,
+        unsecured: receivable.unsecured,
+        orderTotal: orderTotal,
+      });
+      console.log(
+          `[SOR-SUBMIT] Remark eval sor=${clientGeneratedId} accountKey="${receivable.key}" ` +
+          `arFound=${receivable.found} amountDue=${receivable.amountDue} over30=${receivable.over30Days} ` +
+          `unsecured=${receivable.unsecured} creditLimit=${Number(sorPayload.creditLimit) || 0} ` +
+          `orderTotal=${orderTotal} remark1=${serverRemarks.remark1 || "none"} remark2=${serverRemarks.remark2 || "none"}`,
+      );
+
+      // Rejected submissions never get a real SOR number (numbering stays
+      // gap-free); the client id stands in for logs and the response only.
+      const fallbackSorNumber = clientGeneratedId;
       const baseSorFields = {
         ...sorPayload,
+        // Server-authoritative remarks replace anything the client sent.
+        remark1: serverRemarks.remark1,
+        remark2: serverRemarks.remark2,
         submittedBy: callerUid,
         tenantDatabaseId: tenant.databaseId,
         tenantCompanyId: tenant.companyId,
@@ -1735,6 +1937,8 @@ exports.submitSalesRequisition = onCall(
           }
 
           const stockSnaps = await Promise.all(resolvedRefs.map((entry) => txn.get(entry.ref)));
+          // Read the daily counter now: Firestore requires all txn reads before any write.
+          const counterSnap = await txn.get(counterRef);
 
           const inventoryRejections = [];
           const stockMutations = [];
@@ -1785,6 +1989,18 @@ exports.submitSalesRequisition = onCall(
             return {kind: "inventory_rejected", reasons: inventoryRejections};
           }
 
+          // Consume a number only on acceptance, in the same transaction as the
+          // stock decrement, so a rejection can never burn one.
+          const {yy, mm, dd} = manilaDateParts(submissionDate);
+          const currentSeq = counterSnap.exists ? (Number(counterSnap.data().seq) || 0) : 0;
+          const nextSeq = currentSeq + 1;
+          const assignedSorNumber = formatSorNumber(SOR_NUMBER_PREFIX, submissionDate, nextSeq);
+          txn.set(counterRef, {
+            seq: nextSeq,
+            date: `${yy}${mm}${dd}`,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+
           for (const mutation of stockMutations) {
             // itemsAvailable's stock field is `quantity`; write only it so a
             // stale `stock` field can't later mask the value item_model reads.
@@ -1795,10 +2011,12 @@ exports.submitSalesRequisition = onCall(
           }
           txn.set(sorRef, {
             ...baseSorFields,
+            sorNumber: assignedSorNumber,
+            sorNo: assignedSorNumber,
             status: "accepted",
             emailStatus: "queued",
           });
-          return {kind: "accepted"};
+          return {kind: "accepted", sorNumber: assignedSorNumber};
         });
       } catch (error) {
         console.error(`[SOR-SUBMIT] Transaction failed for sor=${clientGeneratedId}:`, error);
@@ -1820,7 +2038,7 @@ exports.submitSalesRequisition = onCall(
         return {
           accepted: false,
           sorId: clientGeneratedId,
-          sorNumber: sorNumberOut,
+          sorNumber: fallbackSorNumber,
           rejectionCategory: SOR_REJECTION_CATEGORIES.VALIDATION,
           rejectionReasons: outcome.reasons,
           idempotentReplay: false,
@@ -1836,7 +2054,7 @@ exports.submitSalesRequisition = onCall(
         return {
           accepted: false,
           sorId: clientGeneratedId,
-          sorNumber: sorNumberOut,
+          sorNumber: fallbackSorNumber,
           rejectionCategory: SOR_REJECTION_CATEGORIES.INVENTORY,
           rejectionReasons: outcome.reasons,
           idempotentReplay: false,
@@ -1844,14 +2062,16 @@ exports.submitSalesRequisition = onCall(
         };
       }
 
+      const acceptedSorNumber = outcome.sorNumber;
+
       await appendSorEvent(tenantDb, clientGeneratedId, "sor_sync_accepted", {
         actor: actor,
-        details: {sorNumber: sorNumberOut, lineItemCount: lineItems.length},
+        details: {sorNumber: acceptedSorNumber, lineItemCount: lineItems.length},
         correlationId: correlationId,
       });
 
       console.log(
-          `[SOR-SUBMIT] Accepted sor=${clientGeneratedId} sorNumber=${sorNumberOut} ` +
+          `[SOR-SUBMIT] Accepted sor=${clientGeneratedId} sorNumber=${acceptedSorNumber} ` +
           `tenant=${tenant.companyId}/${tenant.databaseId}`,
       );
 
@@ -1861,28 +2081,65 @@ exports.submitSalesRequisition = onCall(
       // surfaced independently in the response.
       const callerEmail =
         request.auth.token && request.auth.token.email ? request.auth.token.email : null;
-      const dispatchResult = await dispatchAutoRoutedEmailForRequisition({
-        tenantDb,
-        tenant,
-        requisitionRef: sorRef,
-        requisitionData: {
-          ...sorPayload,
-          sorNumber: sorNumberOut,
-          correlationId: correlationId,
-        },
-        pdfData: validated.pdfData,
-        fileName: validated.fileName,
-        currentAttempts: 0,
-        callerUid,
-        callerEmail,
-        invocationContext: "sync_post_accept",
-        correlationId,
-      });
+
+      // Render the invoice PDF with the server-assigned number, then dispatch.
+      // A render failure must not undo the committed acceptance, so it degrades
+      // to a failed email outcome rather than throwing out of the callable.
+      let dispatchResult;
+      try {
+        const pdfBuffer = await buildRequisitionPdf(
+            {
+              ...sorPayload,
+              remark1: serverRemarks.remark1,
+              remark2: serverRemarks.remark2,
+              sorNumber: acceptedSorNumber,
+              sorNo: acceptedSorNumber,
+            },
+            submissionDate,
+        );
+        dispatchResult = await dispatchAutoRoutedEmailForRequisition({
+          tenantDb,
+          tenant,
+          requisitionRef: sorRef,
+          requisitionData: {
+            ...sorPayload,
+            remark1: serverRemarks.remark1,
+            remark2: serverRemarks.remark2,
+            sorNumber: acceptedSorNumber,
+            correlationId: correlationId,
+          },
+          pdfData: pdfBuffer.toString("base64"),
+          fileName: `SOR-${acceptedSorNumber}.pdf`,
+          currentAttempts: 0,
+          callerUid,
+          callerEmail,
+          invocationContext: "sync_post_accept",
+          correlationId,
+        });
+      } catch (renderError) {
+        console.error(`[SOR-SUBMIT] PDF render failed for sor=${clientGeneratedId}:`, renderError);
+        await sorRef.set({
+          emailStatus: "failed",
+          autoEmailStatus: "failed",
+          autoEmailLastError: "Server PDF render failed.",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        dispatchResult = {
+          status: "failed",
+          route: null,
+          sentTo: null,
+          error: "Server PDF render failed.",
+          errorCode: "pdf_render_failed",
+          messageId: null,
+        };
+      }
 
       return {
         accepted: true,
         sorId: clientGeneratedId,
-        sorNumber: sorNumberOut,
+        sorNumber: acceptedSorNumber,
+        remark1: serverRemarks.remark1,
+        remark2: serverRemarks.remark2,
         emailStatus: dispatchResult.status,
         emailRoute: dispatchResult.route,
         emailSentTo: dispatchResult.sentTo,
