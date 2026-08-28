@@ -19,21 +19,6 @@ service cloud.firestore {
       return request.auth.uid == resource.data[userIdField];
     }
 
-    // Allow signed-in users to decrement inventory quantity only.
-    // This supports requisition submission while preventing arbitrary writes.
-    function isValidInventoryDecrement() {
-      let previousQuantity = resource.data.quantity is number
-        ? resource.data.quantity
-        : (resource.data.stock is number ? resource.data.stock : -1);
-
-      return isSignedIn()
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['quantity'])
-        && request.resource.data.quantity is number
-        && previousQuantity >= 0
-        && request.resource.data.quantity >= 0
-        && request.resource.data.quantity <= previousQuantity;
-    }
-
     // users collection
     // - Users can read and write their own data
     // - Admins can read and update any user (needed for role management)
@@ -52,14 +37,19 @@ service cloud.firestore {
     }
 
     // salesRequisitions collection
-    // - Users can create their own requisitions
-    // - Users can read/update/delete their OWN requisitions
-    // - Admins can read ALL requisitions (for reports/analytics)
-    // - Admins can update/delete any requisition
+    // - Created ONLY by the submitSalesRequisition callable, and item/amount
+    //   edits go ONLY through the editSalesRequisition callable (Admin SDK
+    //   bypasses rules), so the server owns numbering, inventory and routing.
+    // - Owners read their own, admins read all. The only direct client write
+    //   left is the archive soft-delete, so update is restricted to its fields;
+    //   hard delete is denied.
     match /salesRequisitions/{sorId} {
-      allow create: if isSignedIn();
+      allow create: if false;
       allow read: if isSignedIn() && (isOwner("userID") || isAdmin());
-      allow update, delete: if isSignedIn() && (isOwner("userID") || isAdmin());
+      allow update: if isSignedIn() && (isOwner("userID") || isAdmin())
+        && request.resource.data.diff(resource.data).changedKeys()
+             .hasOnly(['isDeleted', 'deletedAt', 'deletedBy', 'deletedByEmail', 'updatedAt']);
+      allow delete: if false;
     }
 
     // dataImports collection
@@ -103,12 +93,13 @@ service cloud.firestore {
 
     // itemsAvailable collection
     // - All authenticated users can read (for inventory checks)
-    // - Admins can fully manage inventory
-    // - Signed-in users may only decrement quantity during requisition submit
+    // - Stock is written ONLY by the server — the submit callable decrements it
+    //   and the Excel import seeds it, both via the Admin SDK (bypasses rules).
+    //   The old signed-in client-decrement allowance is gone now the callable
+    //   owns inventory writes.
     match /itemsAvailable/{docId} {
       allow read: if isSignedIn();
-      allow update: if isAdmin() || isValidInventoryDecrement();
-      allow create, delete: if isAdmin();
+      allow write: if false;
     }
 
     // Admin-only collections
@@ -149,10 +140,11 @@ service cloud.firestore {
     }
 
     // counters collection
-    // - Signed-in users atomically claim the next daily SOR number here.
-    //   (Could be tightened to an increment-only check if abuse becomes a concern.)
+    // - SOR numbers are allocated server-side by the submitSalesRequisition
+    //   callable (Admin SDK, which bypasses rules); no client reads or writes
+    //   these, so both are denied to keep numbering tamper-proof.
     match /counters/{counterId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if false;
     }
 
     // Catch-all (default deny for security)
