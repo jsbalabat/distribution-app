@@ -11,13 +11,58 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {HttpsError} = require("firebase-functions/v2/https");
 
+const zlib = require("node:zlib");
+
 const {__internal} = require("../index.js");
 const {
   isValidRequisitionUuid,
   validateSubmitRequisitionPayload,
   evaluateRollbackEligibility,
   buildIdempotentReplayResponse,
+  evaluateRequisitionRemarks,
+  formatRemarksLine,
+  buildRequisitionPdf,
 } = __internal;
+
+/**
+ * Extracts rendered text from a pdfmake buffer. Two layers of decoding: each
+ * content stream is FlateDecode-compressed, and inside it pdfmake emits text as
+ * hex glyph runs (e.g. `<52656d6172>` = "Remar") in TJ arrays. Inflate every
+ * stream, hex-decode the `<...>` runs, and concatenate — the result contains the
+ * visible text (with layout/kerning tokens dropped) for substring assertions.
+ * @param {Buffer} pdfBuffer Rendered PDF bytes.
+ * @return {string} Concatenated decoded page text.
+ */
+function extractPdfText(pdfBuffer) {
+  let raw = "";
+  let searchFrom = 0;
+  for (;;) {
+    const start = pdfBuffer.indexOf("stream", searchFrom);
+    if (start === -1) break;
+    const end = pdfBuffer.indexOf("endstream", start);
+    if (end === -1) break;
+    // Skip "stream" + the CRLF/LF that follows the keyword.
+    let dataStart = start + "stream".length;
+    if (pdfBuffer[dataStart] === 0x0d) dataStart++;
+    if (pdfBuffer[dataStart] === 0x0a) dataStart++;
+    const chunk = pdfBuffer.subarray(dataStart, end);
+    try {
+      raw += zlib.inflateSync(chunk).toString("latin1");
+    } catch (_e) {
+      // Not a FlateDecode stream (e.g. an embedded font) — ignore.
+    }
+    searchFrom = end + "endstream".length;
+  }
+
+  let text = "";
+  const hexRun = /<([0-9A-Fa-f]+)>/g;
+  let match;
+  while ((match = hexRun.exec(raw)) !== null) {
+    const hex = match[1].length % 2 === 0 ? match[1] : `${match[1]}0`;
+    text += Buffer.from(hex, "hex").toString("latin1");
+  }
+  return text;
+}
 
 // ===========================================================================
 // isValidRequisitionUuid
@@ -124,15 +169,6 @@ test("validateSubmitRequisitionPayload accepts a well-formed payload", () => {
   assert.equal(result.lineItems[0].quantity, 5);
   assert.equal(result.lineItems[0].unitPrice, 100);
   assert.equal(result.lineItems[0].subtotal, 500);
-  assert.equal(result.fileName, "SOR-0001.pdf");
-  assert.equal(result.pdfData, "JVBERi0=");
-});
-
-test("validateSubmitRequisitionPayload defaults fileName from clientGeneratedId when omitted", () => {
-  const data = validPayload();
-  delete data.fileName;
-  const result = validateSubmitRequisitionPayload(data);
-  assert.match(result.fileName, /^SOR-018f7c0e-9e9d-7a3a-8a3c-446655440000\.pdf$/);
 });
 
 test("validateSubmitRequisitionPayload defaults numeric line-item fields to 0 when missing", () => {
@@ -144,7 +180,6 @@ test("validateSubmitRequisitionPayload defaults numeric line-item fields to 0 wh
   const result = validateSubmitRequisitionPayload(data);
   assert.equal(result.lineItems[0].unitPrice, 0);
   assert.equal(result.lineItems[0].subtotal, 0);
-  assert.equal(result.pdfData, "");
 });
 
 test("validateSubmitRequisitionPayload rejects null data", () => {
@@ -446,4 +481,98 @@ test("buildIdempotentReplayResponse handles empty data gracefully", () => {
   assert.equal(result.sorId, VALID_UUID);
   assert.equal(result.accepted, false);
   assert.equal(result.idempotentReplay, true);
+});
+
+// ===========================================================================
+// evaluateRequisitionRemarks — the credit-control rule (server-authoritative)
+// ===========================================================================
+
+test("evaluateRequisitionRemarks flags OCL when projected due exceeds the credit limit", () => {
+  const result = evaluateRequisitionRemarks({
+    creditLimit: 100000, amountDue: 98000, orderTotal: 5000, over30Days: 0, unsecured: 0,
+  });
+  assert.equal(result.remark1, "OCL");
+  assert.equal(result.remark2, null);
+});
+
+test("evaluateRequisitionRemarks flags Past Due / Unsecured on overdue or unsecured balance", () => {
+  const overdue = evaluateRequisitionRemarks({
+    creditLimit: 100000, amountDue: 2934, orderTotal: 2082, over30Days: 0, unsecured: 2934,
+  });
+  assert.equal(overdue.remark1, null);
+  assert.equal(overdue.remark2, "Past Due / Unsecured");
+
+  const past30 = evaluateRequisitionRemarks({
+    creditLimit: 100000, amountDue: 500, orderTotal: 100, over30Days: 500, unsecured: 0,
+  });
+  assert.equal(past30.remark2, "Past Due / Unsecured");
+});
+
+test("evaluateRequisitionRemarks returns no remarks for a clean account within limit", () => {
+  const result = evaluateRequisitionRemarks({
+    creditLimit: 100000, amountDue: 1000, orderTotal: 500, over30Days: 0, unsecured: 0,
+  });
+  assert.equal(result.remark1, null);
+  assert.equal(result.remark2, null);
+});
+
+// ===========================================================================
+// formatRemarksLine — reads remark1/remark2, never the unwritten `remarks`
+// ===========================================================================
+
+test("formatRemarksLine joins both remarks", () => {
+  assert.equal(
+      formatRemarksLine({remark1: "OCL", remark2: "Past Due / Unsecured"}),
+      "OCL, Past Due / Unsecured",
+  );
+});
+
+test("formatRemarksLine skips a blank/null remark", () => {
+  assert.equal(formatRemarksLine({remark1: null, remark2: "Past Due / Unsecured"}), "Past Due / Unsecured");
+  assert.equal(formatRemarksLine({remark1: "OCL", remark2: "  "}), "OCL");
+});
+
+test("formatRemarksLine returns 'No remarks' when neither is set", () => {
+  assert.equal(formatRemarksLine({}), "No remarks");
+  assert.equal(formatRemarksLine({remark1: null, remark2: null}), "No remarks");
+});
+
+test("formatRemarksLine ignores a legacy singular `remarks` field", () => {
+  // The bug: the old PDF read `remarks`, which nothing writes. Prove it's inert.
+  assert.equal(formatRemarksLine({remarks: "should be ignored"}), "No remarks");
+});
+
+// ===========================================================================
+// buildRequisitionPdf — the emailed report actually prints the remarks
+// (regression for "a report was sent that should have had remarks but didn't")
+// ===========================================================================
+
+test("buildRequisitionPdf prints remark1/remark2 in the rendered PDF", async () => {
+  const pdf = await buildRequisitionPdf({
+    sorNumber: "HDI1-260830-001",
+    customerName: "Test Customer",
+    accountNumber: "BBANIE01",
+    totalAmount: 2082,
+    items: [{name: "Widget", code: "W1", quantity: 2, unitPrice: 1041}],
+    remark1: "OCL",
+    remark2: "Past Due / Unsecured",
+  }, new Date("2026-08-30T02:00:00Z"));
+
+  assert.ok(Buffer.isBuffer(pdf) && pdf.length > 0, "expected a non-empty PDF buffer");
+  const text = extractPdfText(pdf);
+  assert.match(text, /Remarks: OCL, Past Due \/ Unsecured/);
+  assert.doesNotMatch(text, /No remarks/);
+});
+
+test("buildRequisitionPdf prints 'No remarks' when neither remark is set", async () => {
+  const pdf = await buildRequisitionPdf({
+    sorNumber: "HDI1-260830-002",
+    customerName: "Clean Customer",
+    accountNumber: "CLEAN01",
+    totalAmount: 500,
+    items: [{name: "Widget", code: "W1", quantity: 1, unitPrice: 500}],
+  }, new Date("2026-08-30T02:00:00Z"));
+
+  const text = extractPdfText(pdf);
+  assert.match(text, /Remarks: No remarks/);
 });

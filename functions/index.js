@@ -829,6 +829,21 @@ function evaluateRequisitionRemarks(params) {
 }
 
 /**
+ * Renders the two credit-control remarks (remark1/remark2) into one display
+ * line for the PDF, skipping blanks. The remarks are stored as remark1/remark2,
+ * NOT a singular `remarks` field — reading the wrong key is what silently
+ * dropped remarks from the emailed report.
+ * @param {object} sorData Requisition data carrying remark1/remark2.
+ * @return {string} Joined remark text, or "No remarks" when neither is set.
+ */
+function formatRemarksLine(sorData) {
+  return [sorData && sorData.remark1, sorData && sorData.remark2]
+      .map((r) => (r || "").toString().trim())
+      .filter((r) => r.length > 0)
+      .join(", ") || "No remarks";
+}
+
+/**
  * Builds placeholder email content for auto-routing notifications.
  * @param {object} params Template parameters.
  * @return {{subject: string, html: string}}
@@ -1777,12 +1792,7 @@ function buildRequisitionPdf(sorData, submissionDate) {
   const totalAmount = Number(sorData.totalAmount || sorData.amount || 0);
   const {mm, dd, year} = manilaDateParts(submissionDate);
   const dateStr = `${year}-${mm}-${dd}`;
-  // The server stores the two credit-control remarks as remark1/remark2, not a
-  // singular `remarks` field — join them so the emailed PDF matches the app.
-  const remarksText = [sorData.remark1, sorData.remark2]
-      .map((r) => (r || "").toString().trim())
-      .filter((r) => r.length > 0)
-      .join(", ") || "No remarks";
+  const remarksText = formatRemarksLine(sorData);
 
   const itemRows = items.map((item) => {
     const quantity = Number(item.quantity || 0);
@@ -4320,4 +4330,7 @@ exports.__internal = {
   validateSubmitRequisitionPayload,
   evaluateRollbackEligibility,
   buildIdempotentReplayResponse,
+  evaluateRequisitionRemarks,
+  formatRemarksLine,
+  buildRequisitionPdf,
 };
