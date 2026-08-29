@@ -62,10 +62,7 @@ Future<Uint8List> generateRequisitionsReportPDF(
           data: rows.map((r) {
             final ts = RequisitionFields.timestamp(r);
             final status = RequisitionStatus.fromRequisition(r);
-            final remarks = [r['remark1'], r['remark2']]
-                .where((v) => v != null && v.toString().trim().isNotEmpty)
-                .map((v) => v.toString())
-                .join(', ');
+            final remarks = RequisitionFields.remarksLine(r);
             return [
               RequisitionFields.sorNumber(r),
               ts != null ? dateFmt.format(ts) : '',

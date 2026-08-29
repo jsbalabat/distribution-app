@@ -5,8 +5,11 @@ import 'package:printing/printing.dart';
 import '../services/firestore_service.dart';
 import '../styles/app_styles.dart';
 import '../utils/requisition_fields.dart';
+import '../utils/requisitions_report_pdf.dart';
+import '../utils/app_logger.dart';
 import '../models/requisition_status.dart';
 import '../widgets/status_badge.dart';
+import 'pdf_preview_screen.dart';
 
 Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
   final pdf = pw.Document();
@@ -39,12 +42,17 @@ Future<void> _generateAndPrintPDF(Map<String, dynamic> data) async {
           }).toList(),
         ),
         pw.SizedBox(height: 10),
-        pw.Text('Remarks: ${data['remarks'] ?? ''}'),
+        pw.Text('Remarks: ${_remarksOrNone(data)}'),
       ],
     ),
   );
 
   await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+}
+
+String _remarksOrNone(Map<String, dynamic> data) {
+  final line = RequisitionFields.remarksLine(data);
+  return line.isEmpty ? 'No remarks' : line;
 }
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -469,26 +477,67 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ),
         ],
       ),
-      // Optional: Add a floating action button for quick actions
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppStyles.secondaryColor,
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Export feature coming soon!'),
-              backgroundColor: AppStyles.secondaryColor,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  AppStyles.borderRadiusMedium,
-                ),
-              ),
-              margin: const EdgeInsets.all(AppStyles.paddingMedium),
-            ),
-          );
-        },
-        child: const Icon(Icons.file_download, color: Colors.white),
+        onPressed: _exportRequisitionsReport,
+        icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+        label: const Text(
+          'Export PDF',
+          style: TextStyle(color: Colors.white),
+        ),
       ),
+    );
+  }
+
+  // Builds a one-tap PDF report of the signed-in user's own requisitions and
+  // opens it in the shared preview (print + share). Pulls a fresh full set
+  // rather than the paginated _docs so the report isn't limited to loaded pages.
+  Future<void> _exportRequisitionsReport() async {
+    List<Map<String, dynamic>> requisitions;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      requisitions = await _firestoreService.fetchUserRequisitionsForReport();
+    } catch (e, st) {
+      AppLogger.error(
+        'Failed to load requisitions for report',
+        error: e,
+        stackTrace: st,
+        tag: 'TRANSACTIONS',
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load your requisitions: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(); // dismiss the spinner
+
+    if (requisitions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No requisitions to export yet.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final pdfBytes = await generateRequisitionsReportPDF(requisitions);
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PdfPreviewScreen(pdfBytes: pdfBytes)),
     );
   }
 
