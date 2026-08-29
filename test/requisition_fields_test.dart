@@ -39,4 +39,30 @@ void main() {
       );
     });
   });
+
+  group('RequisitionFields.remarksLine', () {
+    test('joins both credit-control remarks', () {
+      final data = {'remark1': 'OCL', 'remark2': 'Past Due / Unsecured'};
+      expect(RequisitionFields.remarksLine(data), 'OCL, Past Due / Unsecured');
+    });
+
+    test('skips a blank or missing remark', () {
+      expect(
+        RequisitionFields.remarksLine({'remark2': 'Past Due / Unsecured'}),
+        'Past Due / Unsecured',
+      );
+      expect(RequisitionFields.remarksLine({'remark1': 'OCL', 'remark2': '  '}), 'OCL');
+    });
+
+    test('returns empty when neither remark is set', () {
+      expect(RequisitionFields.remarksLine({}), '');
+      expect(RequisitionFields.remarksLine({'remark1': null, 'remark2': null}), '');
+    });
+
+    test('ignores the legacy singular remarks field', () {
+      // The bug the fix addresses: PDFs used to read `remarks`, which nothing
+      // writes; only remark1/remark2 should ever be reflected.
+      expect(RequisitionFields.remarksLine({'remarks': 'ignored'}), '');
+    });
+  });
 }
