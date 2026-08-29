@@ -39,6 +39,16 @@ class RequisitionFields {
     return (data['approvalRoute'] ?? '').toString().trim().toLowerCase();
   }
 
+  // Joins the two server-authoritative credit-control remarks (remark1/remark2)
+  // into one display string, skipping blanks; returns '' when neither is set.
+  // The legacy singular `remarks` field is no longer written, so it is ignored.
+  static String remarksLine(Map<String, dynamic> data) {
+    return [data['remark1'], data['remark2']]
+        .where((v) => v != null && v.toString().trim().isNotEmpty)
+        .map((v) => v.toString().trim())
+        .join(', ');
+  }
+
   static List<String> approvalReasons(Map<String, dynamic> data) {
     final value = data['approvalReasons'];
     if (value is List) {

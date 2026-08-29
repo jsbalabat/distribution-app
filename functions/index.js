@@ -1777,6 +1777,12 @@ function buildRequisitionPdf(sorData, submissionDate) {
   const totalAmount = Number(sorData.totalAmount || sorData.amount || 0);
   const {mm, dd, year} = manilaDateParts(submissionDate);
   const dateStr = `${year}-${mm}-${dd}`;
+  // The server stores the two credit-control remarks as remark1/remark2, not a
+  // singular `remarks` field — join them so the emailed PDF matches the app.
+  const remarksText = [sorData.remark1, sorData.remark2]
+      .map((r) => (r || "").toString().trim())
+      .filter((r) => r.length > 0)
+      .join(", ") || "No remarks";
 
   const itemRows = items.map((item) => {
     const quantity = Number(item.quantity || 0);
@@ -1810,7 +1816,7 @@ function buildRequisitionPdf(sorData, submissionDate) {
           ],
         },
       },
-      {text: `Remarks: ${sorData.remarks || "No remarks"}`, margin: [0, 10, 0, 10]},
+      {text: `Remarks: ${remarksText}`, margin: [0, 10, 0, 10]},
       {
         text: `Total Amount (in pesos): ${totalAmount.toFixed(2)}`,
         fontSize: 16,

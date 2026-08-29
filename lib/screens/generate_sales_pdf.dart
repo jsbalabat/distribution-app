@@ -48,7 +48,7 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
           }).toList(),
         ),
         pw.SizedBox(height: 10),
-        pw.Text('Remarks: ${data['remarks'] ?? 'No remarks'}'),
+        pw.Text('Remarks: ${_remarksOrNone(data)}'),
         pw.SizedBox(height: 10),
         pw.Text(
           'Total Amount (in pesos): ${RequisitionFields.totalAmount(data).toStringAsFixed(2)}',
@@ -59,4 +59,9 @@ Future<Uint8List> generateSalesPDF(Map<String, dynamic> data) async {
   );
 
   return pdf.save();
+}
+
+String _remarksOrNone(Map<String, dynamic> data) {
+  final line = RequisitionFields.remarksLine(data);
+  return line.isEmpty ? 'No remarks' : line;
 }
