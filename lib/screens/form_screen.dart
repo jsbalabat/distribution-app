@@ -14,8 +14,6 @@ import '../widgets/quantity_input_dialog.dart';
 import '../widgets/customer_search_dialog.dart';
 import '../widgets/edit_quantity_dialog.dart';
 import '../widgets/confirmation_dialog.dart';
-// STEP 1: Uncomment to enable email functionality
-// import '../widgets/pdf_email_section.dart';
 import '../utils/error_types.dart';
 import '../styles/app_styles.dart';
 
@@ -733,25 +731,6 @@ class _FormScreenState extends State<FormScreen> {
           },
         ),
       ),
-      // STEP 7: Uncomment to enable email functionality
-      // FormStepData(
-      //   title: 'PDF & Email',
-      //   content: PdfEmailSection(
-      //     selectedCustomer: _selectedCustomer,
-      //     selectedItems: _selectedItems,
-      //     sorNumber: _sorNumber,
-      //     requestDate: _requestDate,
-      //     dispatchDate: _dispatchDate,
-      //     invoiceDate: _invoiceDate,
-      //     totalAmount: _calculateTotal(),
-      //     remarks: _remarks,
-      //     onEmailSent: (isSent) {
-      //       setState(() {
-      //         _isPdfEmailSent = isSent;
-      //       });
-      //     },
-      //   ),
-      // ),
       FormStepData(
         title: 'Review',
         content: ReviewSection(

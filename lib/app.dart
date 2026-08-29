@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/form_screen.dart';
-import 'screens/review_screen.dart';
 import 'screens/confirmation_screen.dart';
 import 'screens/submissions_screen.dart';
 import 'screens/home_screen.dart';
@@ -168,7 +167,6 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/form': (context) => const FormScreen(),
-        '/review': (context) => const ReviewScreen(),
         '/confirmation': (context) => const ConfirmationScreen(),
         '/submissions': (context) => const SubmissionsScreen(),
         '/transaction_detail': (context) => const TransactionDetailScreen(),
