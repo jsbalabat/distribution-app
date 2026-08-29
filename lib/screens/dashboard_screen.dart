@@ -12,6 +12,7 @@ import '../services/offline_sync_worker.dart';
 import '../providers/user_provider.dart';
 import 'pdf_preview_screen.dart';
 import 'generate_sales_pdf.dart';
+import '../utils/requisitions_report_pdf.dart';
 import 'edit_requisition_screen.dart';
 import 'notifications_screen.dart';
 import '../models/requisition_status.dart';
@@ -239,6 +240,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return 'Something went wrong loading your dashboard.';
   }
 
+  // Builds a one-tap PDF report of the signed-in user's own requisitions and
+  // opens it in the shared preview (which offers print + share).
+  Future<void> _exportRequisitionsReport() async {
+    List<Map<String, dynamic>> requisitions;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      requisitions = await _firestoreService.fetchUserRequisitionsForReport();
+    } catch (e, st) {
+      AppLogger.error(
+        'Failed to load requisitions for report',
+        error: e,
+        stackTrace: st,
+        tag: 'DASHBOARD',
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load your requisitions: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop(); // dismiss the spinner
+
+    if (requisitions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No requisitions to export yet.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final pdfBytes = await generateRequisitionsReportPDF(requisitions);
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PdfPreviewScreen(pdfBytes: pdfBytes)),
+    );
+  }
+
   Future<void> _retryAutoEmail({
     required String requisitionId,
     required Map<String, dynamic> requisitionData,
@@ -361,6 +413,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 : const Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Sync pending uploads',
             onPressed: _isSyncing ? null : _triggerSync,
+          ),
+          IconButton(
+            icon: const Icon(Icons.summarize, color: Colors.white),
+            tooltip: 'Export my requisitions (PDF)',
+            onPressed: _exportRequisitionsReport,
           ),
           IconButton(
             icon: const Icon(Icons.notifications_none, color: Colors.white),

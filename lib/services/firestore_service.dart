@@ -363,6 +363,24 @@ class FirestoreService {
     return query.get();
   }
 
+  // Fetches the caller's own requisitions for the on-device PDF report. A single
+  // capped read (no cursor) — a per-user history is small — returned as plain
+  // maps with the doc id folded in so the report renders without a live query.
+  Future<List<Map<String, dynamic>>> fetchUserRequisitionsForReport({
+    int limit = 500,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception("User not authenticated");
+
+    final snapshot = await _firestore
+        .collection('salesRequisitions')
+        .where('userID', isEqualTo: uid)
+        .limit(limit)
+        .get();
+
+    return snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+  }
+
   // Optional: Fetch customer or item lists
   Stream<QuerySnapshot> getCustomers() =>
       _firestore.collection('customers').snapshots();
