@@ -1,11 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'providers/user_provider.dart';
 import 'app.dart';
-import 'config/firebase_config.dart';
 import 'screens/startup_error_screen.dart';
 import 'utils/app_logger.dart';
 
@@ -29,21 +27,18 @@ class _StartupGateState extends State<StartupGate> {
   late Future<void> _bootstrap = _initializeFirebase();
 
   Future<void> _initializeFirebase() async {
-    // A genuine config failure here propagates to the retry screen on its own.
-    await FirebaseConfig.initialize();
-
     // A Firebase app already present needs no re-init; re-initializing a live app
     // triggers a FlutterFire hot-restart crash, so skip when one exists.
     if (Firebase.apps.isNotEmpty) return;
 
     try {
-      if (kIsWeb) {
-        await Firebase.initializeApp(options: FirebaseConfig.getWebOptions());
-      } else {
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-      }
+      // Web and mobile both initialize from the compiled options in
+      // firebase_options.dart. The web config isn't secret, and keeping it
+      // compiled avoids a runtime .env fetch that Hosting can drop (dotfile) or
+      // a service worker can stale-cache — the cause of the web startup failure.
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
     } catch (e, st) {
       // The [DEFAULT] app already exists and is usable in these known cases:
       //  - duplicate-app: Android's FirebaseInitProvider created it before Dart ran
