@@ -938,9 +938,14 @@ async function findTenantForRequisitionId(requisitionId) {
  */
 async function writeAutoEmailLog(tenantDb, payload) {
   try {
+    // Self-expire ~30 days out via the emailLogs.expiresAt TTL policy
+    // (firestore.indexes.json) so routed email logs don't accumulate forever.
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + 30);
     await tenantDb.collection("emailLogs").add({
       type: "requisition_auto_route",
       sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expirationDate),
       ...payload,
     });
   } catch (error) {
