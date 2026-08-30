@@ -1,10 +1,10 @@
-# new_test_store
+# Ledgerly
 
-Sales requisition and inventory management app built with Flutter, Firebase, and Cloud Functions.
+Ledgerly is a sales requisition and inventory management app built with Flutter, Firebase, and Cloud Functions.
 
 ## Overview
 
-`new_test_store` helps teams manage sales requisitions, inventory, customers, user roles, and operational audit logs across mobile, web, and desktop targets.
+Ledgerly helps teams manage sales requisitions, inventory, customers, user roles, and operational audit logs across mobile phones, the web, and desktop.
 
 The app supports:
 
@@ -40,7 +40,7 @@ The app supports:
 
 - Firestore-backed data storage
 - Cloud Functions for scheduled maintenance, retention pruning, direct import, and email operations
-- Environment-based Firebase config using `.env`
+- Firebase connection settings are built into the app (no separate configuration file to set up)
 - Soft-delete support for requisitions so history is preserved
 - Structured import and cleanup logging through Firestore and Cloud Function logs
 - Multi-company support via tenant-specific Firestore database IDs selected at sign-in
@@ -83,6 +83,8 @@ The app supports:
 
 ## Getting Started
 
+> Developer note: the app is branded **Ledgerly**, but the internal Flutter package name (`new_test_store`) and the Android application ID (`com.marc.new_test_store`) are unchanged — you will still see `new_test_store` in code imports and build files.
+
 ### Prerequisites
 
 - Flutter SDK installed
@@ -97,18 +99,20 @@ cd functions
 npm install
 ```
 
-### Environment Setup
+### Configuration
 
-Create a `.env` file at the project root and provide the Firebase web config values used by the app.
+The app's Firebase connection settings are compiled into the app (`lib/firebase_options.dart`), so there is no `.env` file to create — the app works after `flutter pub get`.
 
-An example template is available in `.env.example`.
+Server-side email credentials (used to send the approval emails) live in `functions/.env.yaml`, which is kept out of version control.
 
-For multi-company deployments, sign in with the target company Firestore database ID in the login screen. Use `(default)` for the primary database.
+For multi-company use, sign in with the target company's database ID on the login screen. Use `(default)` for the primary database.
 
 ### Run the App
 
+The app is split into build flavors (`dev`, `stage`, `prod`). For day-to-day development, run the dev flavor on a connected device or emulator:
+
 ```bash
-flutter run
+flutter run --flavor dev
 ```
 
 ### Run Tests
@@ -124,6 +128,31 @@ flutter analyze
 cd functions
 npm run lint
 ```
+
+## Publishing
+
+### Admin website (Firebase Hosting)
+
+The same app also runs in a web browser, which is how admins use it on a desktop. To publish it:
+
+```bash
+flutter build web --release
+firebase deploy --only hosting
+```
+
+It goes live at `https://sales-field-app-f31a2.web.app`. After publishing, open the site in a private/incognito window to confirm you're seeing the latest version — browsers cache the web app aggressively. On a wide screen the admin layout is shown automatically.
+
+### Android app file (APK)
+
+To produce an installable Android file:
+
+```bash
+flutter build apk --flavor prod --release
+```
+
+The file is written to `build/app/outputs/flutter-apk/app-prod-release.apk`. Copy it to a phone and open it to install (you may need to allow installing from unknown sources). It runs on Android 6.0 and newer.
+
+Note: this build is signed with a test key, which is fine for internal testing but not for public distribution or the Play Store. Setting up a proper signing key is a future step.
 
 ## Firebase Notes
 
@@ -166,12 +195,13 @@ Recommended next test additions:
 
 Before production deployment:
 
-1. Verify Firestore rules and indexes
-2. Deploy Cloud Functions
-3. Confirm `.env` values are not committed
-4. Run the app on all supported targets
-5. Review retention and cleanup settings in admin configuration
-6. Validate admin direct Excel upload in web and Android builds
+1. Verify and deploy Firestore rules and indexes (`firebase deploy --only firestore`)
+2. Deploy Cloud Functions (`firebase deploy --only functions`)
+3. Publish the web build to Firebase Hosting (`firebase deploy --only hosting`)
+4. Confirm server email credentials in `functions/.env.yaml` are not committed
+5. Run the app on all supported targets
+6. Review retention and cleanup settings in admin configuration
+7. Validate admin Excel upload in the web and Android builds
 
 ## Known Limitations
 
